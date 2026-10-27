@@ -94,6 +94,11 @@ button[data-baseweb="tab"] p { font-size: 14px; }
 [data-testid="stSidebar"] h1 { font-size: 1.3rem !important; color: var(--wf-green-dark); }
 [data-testid="stSidebar"] h3 { font-size: .8rem !important; letter-spacing: 1px; text-transform: uppercase; color: var(--wf-muted); }
 
+/* interest sliders: reserve two label lines so every slider in the row lines up */
+[class*="st-key-tr_"][class*="interests"] [data-testid="stWidgetLabel"] { min-height: 2.8em; align-items: flex-start; }
+[data-testid="stCaptionContainer"] { opacity: 1; }
+[data-testid="stCaptionContainer"] p { margin-bottom: .6rem; line-height: 1.45; }
+
 /* ---- reusable blocks ---- */
 .wf-card { background: #fff; border: 1px solid var(--wf-line); border-radius: 16px; padding: 20px 22px; }
 .wf-title-block h1 { margin: 0 0 4px; }

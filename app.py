@@ -241,11 +241,9 @@ def quick_start():
 def planner_settings():
     with st.container(border=True):
         st.markdown("#### Planner settings")
-        st.toggle("AI generation", key="consent_ai",
-                  help="Allow trip details (de-identified) to be sent to Anthropic's Claude API.")
+        st.toggle("AI generation", key="consent_ai")
         st.caption("Allow trip details (de-identified) to be sent to Anthropic's Claude API.")
-        st.toggle("Personalisation", key="consent_personal",
-                  help="Send each traveller's interest profile (under an alias). Off = generic plan.")
+        st.toggle("Personalisation", key="consent_personal")
         st.caption("Send each traveller's interest profile (under an alias). Off = generic plan.")
         st.divider()
         st.slider("Itinerary options to generate", 1, 3, key="n_options",
@@ -404,15 +402,15 @@ def travellers_tab():
     for tr in ss.travellers:
         k = f"tr_{tr['id']}_"
         with st.container(border=True):
-            c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+            c1, c2, c3, c4 = st.columns([2, 2, 2, 1], vertical_alignment="bottom")
             tr["name"] = c1.text_input("Name (stays on this device)", tr["name"], key=k + "name")
             tr["weight"] = c2.slider("Influence weight", 0.0, 1.0, float(tr["weight"]), 0.1, key=k + "weight")
             tr["pace"] = c3.select_slider("Preferred pace", list(PACE_LABELS), tr["pace"], format_func=PACE_LABELS.get, key=k + "pace")
-            c4.write("")
             c4.button("Remove", key=k + "rm", on_click=remove_traveller, args=(tr["id"],), disabled=len(ss.travellers) == 1)
-            cols = st.columns(len(INTERESTS))
-            for col, d in zip(cols, INTERESTS):
-                tr["interests"][d] = col.slider(INTEREST_LABELS[d], 0, 5, int(tr["interests"][d]), key=k + d)
+            with st.container(key=k + "interests"):
+                cols = st.columns(len(INTERESTS))
+                for col, d in zip(cols, INTERESTS):
+                    tr["interests"][d] = col.slider(INTEREST_LABELS[d], 0, 5, int(tr["interests"][d]), key=k + d)
             c1, c2 = st.columns(2)
             tr["dietary"] = c1.text_input("Dietary needs", tr["dietary"], key=k + "diet", placeholder="e.g. vegetarian, halal")
             tr["mobility"] = c2.text_input("Accessibility needs", tr["mobility"], key=k + "mob", placeholder="e.g. avoid stairs")
@@ -450,7 +448,7 @@ def anchors_tab():
     for a in ss.anchors:
         k = f"an_{a['id']}_"
         with st.container(border=True):
-            c1, c2, c3, c4, c5, c6 = st.columns([3, 1.6, 1.6, 1.2, 1.2, 0.8])
+            c1, c2, c3, c4, c5, c6 = st.columns([3, 1.6, 1.6, 1.2, 1.2, 0.8], vertical_alignment="bottom")
             a["name"] = c1.text_input("Place / activity", a["name"], key=k + "name")
             a["kind"] = c2.radio("Type", ["fixed", "flexible"], ["fixed", "flexible"].index(a["kind"]), key=k + "kind",
                                  format_func={"fixed": "🔒 Fixed", "flexible": "📌 Any day"}.get)
@@ -464,7 +462,6 @@ def anchors_tab():
             else:
                 c3.caption("Any day")
             a["duration_min"] = c5.number_input("Minutes", 15, 600, int(a["duration_min"]), 15, key=k + "dur")
-            c6.write("")
             c6.button("✕", key=k + "rm", on_click=remove_anchor, args=(a["id"],), help="Remove")
             if a.get("note") or a.get("source_url"):
                 st.caption(f"📝 {a['note']}" + (f" · source: {a['source_url']}" if a.get("source_url") else ""))
