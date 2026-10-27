@@ -4,6 +4,7 @@ Run locally:  streamlit run app.py
 """
 
 import copy
+import html
 import json
 import uuid
 from datetime import date, datetime, time, timedelta
@@ -30,6 +31,9 @@ OPTION_BANDS = [("#EBF5EF", "#155235"), ("#E8EFFA", "#1F3F78"), ("#FDF1DC", "#7A
 KIND_ICON = {"activity": "📍", "meal": "🍽️", "rest": "☕"}
 CROWD_BADGE = {"low": ":green-badge[👥 low crowd]", "moderate": ":orange-badge[👥 moderate crowd]", "high": ":red-badge[👥 busy]"}
 CONF_BADGE = {"high": "", "medium": ":gray-badge[ℹ️ verify details]", "low": ":red-badge[⚠️ low-confidence info]"}
+NAV = ["Plan trip", "Itineraries", "Explore", "Privacy & data"]
+NAV_ICONS = {"Plan trip": "luggage", "Itineraries": "map", "Explore": "explore", "Privacy & data": "lock"}
+STEPS = ["Trip details", "Travellers", "Must-visits"]
 VERIFY_NOTE = ("Venue details (hours, prices, crowd levels, coordinates) come from Claude's general knowledge, "
                "not live data. Verify before booking.")
 
@@ -104,18 +108,22 @@ def init():
     ss.update(demo_state())  # Singapore sample is preloaded
     ss.call_log, ss.last_sent = [], None
     ss.consent_ai, ss.consent_personal = False, True
+    ss.n_options, ss.effort = 3, "low"
+    ss.nav, ss.step, ss.loaded, ss.show_script = NAV[0], STEPS[0], "Local Singapore demo", False
     reset_plan_state()
 
 
 def load_demo():
     st.session_state.update(demo_state())
     st.session_state.ver += 1
+    st.session_state.loaded = "Local Singapore demo"
     reset_plan_state()
 
 
 def clear_all():
     st.session_state.update(blank_state())
     st.session_state.ver += 1
+    st.session_state.loaded = "Blank trip"
     st.session_state.call_log, st.session_state.last_sent = [], None
     reset_plan_state()
 
@@ -178,86 +186,188 @@ def selected_entry():
     return ok[min(ss.get("sel_radio", 0), len(ok) - 1)]
 
 
-# ---------------------------------------------------------------- sidebar
+# ---------------------------------------------------------------- navigation, header, right-hand panels
+
+def go_nav(name: str):
+    st.session_state.nav = name
+
+
+def go_step(i: int):
+    st.session_state.step = STEPS[i]
+
+
+def keep_widget_state():
+    """Widgets that only render on some pages would lose their value when hidden; re-assigning keeps it."""
+    ss = st.session_state
+    for k in ("consent_ai", "consent_personal", "n_options", "effort", "show_script", "step", "sel_radio"):
+        if k in ss:
+            ss[k] = ss[k]
+
 
 def sidebar():
-    ss = st.session_state
     with st.sidebar:
-        st.markdown(f'<div class="wf-brand">{ui.LOGO}<span class="wf-name">{APP_NAME}</span></div>', unsafe_allow_html=True)
-        st.caption(TAGLINE)
-
-        st.subheader("Demo mode")
-        c1, c2 = st.columns(2)
-        c1.button("Load Singapore demo", on_click=load_demo, width="stretch", type="primary")
-        c2.button("Start blank trip", on_click=clear_all, width="stretch")
-        with st.expander("Presenter script"):
+        st.radio("Main navigation", NAV, key="nav", label_visibility="collapsed",
+                 format_func=lambda n: f":material/{NAV_ICONS[n]}: {n}")
+        st.divider()
+        st.toggle("Presenter script", key="show_script", help="Show or hide the demo talking points.")
+        if st.session_state.show_script:
             st.markdown(DEMO_SCRIPT)
 
-        st.subheader("Privacy & consent")
+
+def header():
+    ss = st.session_state
+    t = ss.trip
+    parts = [t["destination"] or "New trip"]
+    if t["destination"]:
+        end = t["start_date"] + timedelta(days=int(t["num_days"]) - 1)
+        parts.append(f"{t['start_date'].day} {t['start_date']:%b}–{end.day} {end:%b}")
+    n = len(ss.travellers)
+    parts.append(f"{n} traveller{'s' if n != 1 else ''}")
+    with st.container(key="wf_header"):
+        c1, c2, c3 = st.columns([3.2, 2.2, 1.3], vertical_alignment="center")
+        c1.markdown(ui.brand_html(APP_NAME, "Plan together. Explore further."), unsafe_allow_html=True)
+        c2.markdown(ui.pill_html(" · ".join(parts)), unsafe_allow_html=True)
+        c3.button("Privacy & data", icon=":material/verified_user:", on_click=go_nav, args=("Privacy & data",), width="stretch")
+
+
+def quick_start():
+    with st.container(border=True):
+        st.markdown("#### Quick start")
+        st.caption("Try a filled-in demo or start fresh.")
+        st.button("Local Singapore demo", on_click=load_demo, type="primary", width="stretch")
+        st.button("Blank trip", on_click=clear_all, width="stretch")
+
+
+def planner_settings():
+    with st.container(border=True):
+        st.markdown("#### Planner settings")
         st.toggle("AI generation", key="consent_ai",
                   help="Allow trip details (de-identified) to be sent to Anthropic's Claude API.")
+        st.caption("Allow trip details (de-identified) to be sent to Anthropic's Claude API.")
         st.toggle("Personalisation", key="consent_personal",
                   help="Send each traveller's interest profile (under an alias). Off = generic plan.")
-        st.caption("Separate consents, per PDPA guidance. Names, emails and booking references are never sent.")
-
-        st.subheader("Planner settings")
-        st.slider("Itinerary options to generate", 1, 3, 3, key="n_options",
-                  help="Each option is one parallel Claude call with a different planning strategy.")
-        st.select_slider("Reasoning effort", ["low", "medium", "high"], "low", key="effort",
-                         help="Higher = more careful plans but slower. 'low' keeps live demos snappy.")
-        st.caption(f"Model: `{MODEL}` · " + ("✅ API key found" if ai.get_api_key() else "❌ no API key"))
-
+        st.caption("Send each traveller's interest profile (under an alias). Off = generic plan.")
         st.divider()
-        st.button("🗑️ Clear all my data", on_click=clear_all, width="stretch",
+        st.slider("Itinerary options to generate", 1, 3, key="n_options",
+                  help="Each option is one parallel Claude call with a different planning strategy.")
+        st.select_slider("Reasoning effort", ["low", "medium", "high"], key="effort",
+                         help="Higher = more careful plans but slower. 'low' keeps live demos snappy.")
+        st.caption(f"Model: `{MODEL}` · " + ("API key found" if ai.get_api_key() else "no API key"))
+        st.button("Clear all my data", icon=":material/delete:", on_click=clear_all, width="stretch",
                   help="Deletes everything in this session. Nothing is stored server-side.")
+
+
+def privacy_note():
+    st.markdown('<div class="wf-note"><h4>The AI sees the trip, never the people</h4><p>Names become aliases, emails and '
+                'booking references are stripped, and nothing is stored on a server.</p></div>', unsafe_allow_html=True)
+    st.button("See exactly what gets sent", on_click=go_nav, args=("Privacy & data",), type="tertiary")
+
+
+def step_footer(i: int):
+    c1, c2, c3 = st.columns([1.2, 2, 1.6], vertical_alignment="center")
+    if i > 0:
+        c1.button("Back", key=f"back{i}", on_click=go_step, args=(i - 1,), width="stretch")
+    c2.caption(f"Step {i + 1} of {len(STEPS)}")
+    if i < len(STEPS) - 1:
+        c3.button(f"Next: {STEPS[i + 1]}", key=f"next{i}", type="primary", on_click=go_step, args=(i + 1,), width="stretch")
+    else:
+        c3.button("Go to itineraries", key="to_plan", type="primary", on_click=go_nav, args=("Itineraries",), width="stretch")
+
+
+def plan_trip_page():
+    ss = st.session_state
+    main_col, aside = st.columns([3.2, 1], gap="large")
+    with main_col:
+        ui.page_title("Plan a group trip", "Fill in three short steps. Wayfare weighs everyone's interests and builds up to "
+                      "three itinerary options.")
+        with st.container(key="stepbar"):
+            st.radio("Steps", STEPS, key="step", horizontal=True, label_visibility="collapsed",
+                     format_func=lambda n: f"{STEPS.index(n) + 1} · {n}")
+        i = STEPS.index(ss.step)
+        (trip_tab, travellers_tab, anchors_tab)[i]()
+        step_footer(i)
+    with aside:
+        quick_start()
+        planner_settings()
+        privacy_note()
 
 
 # ---------------------------------------------------------------- tab: trip
 
+def req(label: str) -> str:
+    return f"{label} :red[*]"
+
+
 def trip_tab():
     ss, v = st.session_state, st.session_state.ver
     t = ss.trip
-    ui.page_title("Trip details", "Where you're going, when, and how the group likes to travel.")
-    c1, c2, c3 = st.columns(3)
-    t["destination"] = c1.text_input("Destination city", t["destination"], key=f"dest{v}", placeholder="e.g. Tokyo")
-    t["start_date"] = c2.date_input("Start date", t["start_date"], key=f"start{v}")
-    t["num_days"] = c3.number_input("Number of days", 1, 7, int(t["num_days"]), key=f"ndays{v}")
+    with st.container(border=True):
+        c1, c2 = st.columns([3, 1.6], vertical_alignment="top")
+        c1.markdown("## Trip details")
+        c1.caption("Fields marked :red[*] are required.")
+        c2.markdown(f'<div style="text-align:right"><span class="wf-loaded">Loaded: {html.escape(ss.loaded)}</span></div>',
+                    unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns(3)
-    t["day_start"] = c1.time_input("Day starts", to_time(t["day_start"]), key=f"ds{v}", step=1800).strftime("%H:%M")
-    t["day_end"] = c2.time_input("Day ends", to_time(t["day_end"]), key=f"de{v}", step=1800).strftime("%H:%M")
-    t["crowd_tolerance"] = c3.select_slider("Crowd tolerance", list(CROWD_LABELS), t["crowd_tolerance"],
-                                            format_func=CROWD_LABELS.get, key=f"crowd{v}")
+        ui.eyebrow("Where & when")
+        c1, c2, c3 = st.columns(3)
+        t["destination"] = c1.text_input(req("Destination city"), t["destination"], key=f"dest{v}", placeholder="e.g. Tokyo")
+        t["start_date"] = c2.date_input(req("Start date"), t["start_date"], key=f"start{v}")
+        t["num_days"] = c3.number_input(req("Number of days"), 1, 7, int(t["num_days"]), key=f"ndays{v}")
+        last = t["start_date"] + timedelta(days=int(t["num_days"]) - 1)
+        c3.caption(f"{t['start_date']:%a %d} – {last:%a %d %b}")
+        c1, c2, c3 = st.columns(3)
+        t["day_start"] = c1.time_input(req("Day starts"), to_time(t["day_start"]), key=f"ds{v}", step=1800).strftime("%H:%M")
+        t["day_end"] = c2.time_input(req("Day ends"), to_time(t["day_end"]), key=f"de{v}", step=1800).strftime("%H:%M")
+        t["accommodation"] = c3.text_input(req("Accommodation"), t["accommodation"], key=f"acc{v}",
+                                           placeholder="Hotel name or area")
+        c3.caption("Each day starts and ends here. Area is enough, no exact address needed.")
 
-    c1, c2, c3 = st.columns(3)
-    t["budget"] = c1.number_input("Budget per person, whole trip (excl. hotel)", 0, 100000, int(t["budget"]), 50, key=f"bud{v}")
-    t["currency"] = c2.text_input("Currency", t["currency"], key=f"cur{v}", max_chars=5)
-    t["transport_modes"] = c3.multiselect("Allowed transport", TRANSPORT_MODES, t["transport_modes"], key=f"tm{v}")
-    if not t["transport_modes"]:
-        st.warning("Pick at least one transport mode.")
+        st.divider()
+        ui.eyebrow("Budget & crowds")
+        c1, c2, c3 = st.columns([2, 1, 3])
+        t["budget"] = c1.number_input(req("Budget per person, whole trip"), 0, 100000, int(t["budget"]), 50, key=f"bud{v}")
+        c1.caption("Excludes accommodation. Food, tickets and transport.")
+        currencies = list(dict.fromkeys([t["currency"], "SGD", "MYR", "USD", "EUR", "GBP", "JPY", "AUD"]))
+        t["currency"] = c2.selectbox(req("Currency"), currencies, key=f"cur{v}")
+        t["crowd_tolerance"] = c3.select_slider("Crowd tolerance", list(CROWD_LABELS), t["crowd_tolerance"],
+                                                format_func=CROWD_LABELS.get, key=f"crowd{v}")
 
-    c1, c2 = st.columns(2)
-    t["accommodation"] = c1.text_input("Accommodation (hotel name or area)", t["accommodation"], key=f"acc{v}",
-                                       help="Each day starts and ends here.")
-    t["dietary"] = c2.text_input("Group-wide dietary requirements (optional)", t["dietary"], key=f"diet{v}")
-    t["notes"] = st.text_area("Anything else the planner should know? (optional)", t["notes"], key=f"notes{v}", height=70)
+        st.divider()
+        ui.eyebrow("Allowed transport *")
+        with st.container(key="transport"):
+            cols = st.columns(len(TRANSPORT_MODES))
+            t["transport_modes"] = [m for col, m in zip(cols, TRANSPORT_MODES)
+                                    if col.checkbox(m, m in t["transport_modes"], key=f"tm_{m}{v}")]
+        if not t["transport_modes"]:
+            st.warning("Pick at least one transport mode.")
 
-    st.markdown("#### Weather outlook")
-    if not t["destination"]:
-        st.info("Enter a destination to load the forecast.")
-        return
-    wx = forecast(t["destination"], t["start_date"], int(t["num_days"]))
-    if wx["days"]:
-        cols = st.columns(len(trip_dates(t)))
-        for col, d in zip(cols, trip_dates(t)):
-            w = wx["days"].get(d)
-            with col.container(border=True):
-                st.markdown(f"**{fmt_date(d)}**")
-                if w:
-                    st.markdown(f"{w['summary']}  \n{w['tmin']:.0f}–{w['tmax']:.0f}°C · 🌧 {w['rain_prob']}%")
-                else:
-                    st.caption("No forecast yet")
-    st.caption(f"Source: {wx['source']}. {wx['note']}")
+        st.divider()
+        c1, c2 = st.columns(2)
+        t["dietary"] = c1.text_input("Group-wide dietary requirements (optional)", t["dietary"], key=f"diet{v}")
+        c1.caption("Applied to every meal stop. Individual needs go in each traveller profile.")
+        t["notes"] = c2.text_area("Anything else the planner should know? (optional)", t["notes"], key=f"notes{v}",
+                                  height=88, max_chars=500)
+        c2.caption("Emails and names here are removed before sending.")
+
+    with st.container(border=True):
+        st.markdown(f"#### Weather outlook{' · ' + t['destination'] if t['destination'] else ''}")
+        if not t["destination"]:
+            st.info("Enter a destination to load the forecast.")
+            return
+        st.caption("Open-Meteo forecast for your travel dates. Wet days get indoor backups.")
+        wx = forecast(t["destination"], t["start_date"], int(t["num_days"]))
+        if wx["days"]:
+            cards = ""
+            for n, d in enumerate(trip_dates(t), 1):
+                w = wx["days"].get(d)
+                if not w:
+                    continue
+                p = int(w["rain_prob"])
+                cards += (f'<div class="wf-wx"><div class="top"><b>{fmt_date(d)}</b><span>Day {n}</span></div>'
+                          f'<div class="temp"><b>{w["tmax"]:.0f}°</b> / {w["tmin"]:.0f}°</div><div>{html.escape(str(w["summary"]))}</div>'
+                          f'<div class="pop"><div class="wf-bar"><span style="width:{p}%"></span></div>PoP {p}%</div></div>')
+            st.markdown(f'<div class="wf-wx-grid">{cards}</div>', unsafe_allow_html=True)
+        st.caption(f"Source: {wx['source']}. {wx['note']}")
 
 
 # ---------------------------------------------------------------- tab: travellers
@@ -969,28 +1079,19 @@ def main():
     ui.inject_css()
     gate()
     init()
+    keep_widget_state()
     sidebar()
-    t = st.session_state.trip
-    parts = [t["destination"] or "New trip"]
-    if t["destination"]:
-        end = t["start_date"] + timedelta(days=int(t["num_days"]) - 1)
-        parts.append(f"{t['start_date'].day} {t['start_date']:%b}–{end.day} {end:%b}")
-    parts.append(f"{len(st.session_state.travellers)} traveller" + ("s" if len(st.session_state.travellers) != 1 else ""))
-    ui.app_header(APP_NAME, "Plan together. Explore further.", " · ".join(parts))
-    tabs = st.tabs(["Trip", "Travellers", "Must-visits", "Itineraries", "Re-plan", "Explore", "Privacy & data"])
-    with tabs[0]:
-        trip_tab()
-    with tabs[1]:
-        travellers_tab()
-    with tabs[2]:
-        anchors_tab()
-    with tabs[3]:
+    header()
+    page = st.session_state.nav
+    if page == "Plan trip":
+        plan_trip_page()
+    elif page == "Itineraries":
         plan_tab()
-    with tabs[4]:
+        st.divider()
         replan_tab()
-    with tabs[5]:
+    elif page == "Explore":
         explore_tab()
-    with tabs[6]:
+    else:
         privacy_tab()
 
 

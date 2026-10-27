@@ -40,15 +40,6 @@ h4 { font-size: 1rem !important; }
 a { color: var(--wf-green); }
 a:hover { color: var(--wf-green-dark); }
 
-/* ---- app header ---- */
-.wf-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  background: #fff; border: 1px solid var(--wf-line); border-radius: 16px; padding: 14px 22px; margin-bottom: 14px; }
-.wf-brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.wf-name { font-size: 24px; font-weight: 800; color: var(--wf-green-dark); letter-spacing: -0.5px; }
-.wf-tag { font-size: 14px; color: var(--wf-muted); padding-left: 14px; border-left: 1px solid var(--wf-line); }
-.wf-pill { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 18px;
-  background: var(--wf-tint); color: var(--wf-green-dark); font-size: 13px; font-weight: 600; }
-
 /* ---- navigation tabs: step bar on laptop, bottom bar on phone ---- */
 [data-baseweb="tab-list"] { gap: 6px; padding: 6px; background: #fff; border: 1px solid var(--wf-line);
   border-radius: 14px; overflow-x: auto; }
@@ -130,15 +121,66 @@ button[data-baseweb="tab"] p { font-size: 14px; }
 .wf-consent .never { background: #FBF1EF; border: 1px solid #EFCFCA; color: #5B2C25; }
 .wf-consent b { display: block; font-weight: 800; margin-bottom: 6px; }
 
-/* ---- phone layout: one column, tab bar pinned to the bottom ---- */
+/* ---- app header (keyed container) ---- */
+.st-key-wf_header { background: #fff; border: 1px solid var(--wf-line); border-radius: 16px; padding: 10px 22px; margin-bottom: 14px; }
+.wf-brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.wf-name { font-size: 24px; font-weight: 800; color: var(--wf-green-dark); letter-spacing: -0.5px; }
+.wf-tag { font-size: 14px; color: var(--wf-muted); padding-left: 14px; border-left: 1px solid var(--wf-line); }
+.wf-pill { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 18px;
+  background: var(--wf-tint); color: var(--wf-green-dark); font-size: 13px; font-weight: 600; white-space: nowrap; }
+
+/* ---- left nav: radio group drawn as nav links ---- */
+[data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] { flex-direction: column; gap: 4px; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label, .st-key-stepbar [data-testid="stRadio"] label {
+  border-radius: 10px; cursor: pointer; margin: 0; align-items: center; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label { height: 44px; padding: 0 14px; width: 100%; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label > div:first-child,
+.st-key-stepbar [data-testid="stRadio"] label > div:first-child { display: none; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover { background: var(--wf-bg); }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) { background: var(--wf-tint); }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) p { color: var(--wf-green-dark); font-weight: 700; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label p { font-size: 14px; font-weight: 500; color: #3F4F46; }
+
+/* ---- step bar ---- */
+.st-key-stepbar { background: #fff; border: 1px solid var(--wf-line); border-radius: 14px; padding: 6px; }
+.st-key-stepbar [role="radiogroup"] { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; width: 100%; }
+.st-key-stepbar [data-testid="stRadio"] label { height: 52px; padding: 0 14px; justify-content: center; width: 100%; }
+.st-key-stepbar [data-testid="stRadio"] label:hover { background: var(--wf-bg); }
+.st-key-stepbar [data-testid="stRadio"] label:has(input:checked) { background: var(--wf-green); }
+.st-key-stepbar [data-testid="stRadio"] label:has(input:checked) p { color: #fff; font-weight: 700; }
+.st-key-stepbar [data-testid="stRadio"] label p { font-size: 14px; font-weight: 600; text-align: center; }
+
+/* ---- trip form pieces ---- */
+.wf-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--wf-muted); margin: 2px 0 6px; }
+.wf-loaded { font-size: 12px; font-weight: 600; color: var(--wf-green-dark); background: var(--wf-tint); padding: 6px 10px;
+  border-radius: 8px; display: inline-block; }
+.wf-wx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.wf-wx { padding: 14px 16px; border-radius: 12px; background: var(--wf-bg); border: 1px solid #E6ECE8; display: flex;
+  flex-direction: column; gap: 8px; font-size: 13px; color: #3F4F46; }
+.wf-wx .top { display: flex; justify-content: space-between; }
+.wf-wx .top span { font-size: 12px; color: var(--wf-muted); }
+.wf-wx .temp { font-size: 14px; color: var(--wf-muted); }
+.wf-wx .temp b { font-size: 24px; color: var(--wf-ink); }
+.wf-wx .pop { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: #24497F; }
+.wf-wx .pop .wf-bar { background: #DCE6F2; height: 6px; }
+.wf-wx .pop .wf-bar > span { background: #2D5BA8; height: 6px; }
+.wf-note { padding: 20px; border-radius: 16px; background: var(--wf-tint); border: 1px solid var(--wf-tint-border); }
+.wf-note h4 { margin: 0 0 8px; color: var(--wf-green-dark); font-size: 15px !important; }
+.wf-note p { margin: 0; font-size: 13px; color: #2F4A3B; line-height: 1.55; }
+
+/* transport options as selectable cards */
+.st-key-transport [data-testid="stCheckbox"] { border: 1px solid var(--wf-field); border-radius: 12px; height: 52px;
+  padding: 0 16px; display: flex; align-items: center; background: #fff; }
+.st-key-transport [data-testid="stCheckbox"]:has(input:checked) { border: 1.5px solid var(--wf-green); background: var(--wf-tint); }
+.st-key-transport [data-testid="stCheckbox"] p { font-weight: 600; }
+
+/* ---- phone ---- */
 @media (max-width: 640px) {
-  .block-container { padding: .6rem 16px 6.5rem; }
+  .block-container { padding: .6rem 16px 4rem; }
   .wf-tag { display: none; }
-  .wf-header { padding: 10px 14px; }
+  .st-key-wf_header { padding: 10px 14px; }
   .wf-name { font-size: 20px; }
-  [data-baseweb="tab-list"] { position: fixed; left: 0; right: 0; bottom: 0; z-index: 999; border-radius: 16px 16px 0 0;
-    border-width: 1px 0 0; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); box-shadow: 0 -4px 16px rgba(20,34,26,.08); }
-  button[data-baseweb="tab"] { flex: 0 0 auto; padding: 0 12px; }
+  .st-key-stepbar [role="radiogroup"] { grid-template-columns: 1fr; }
   [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: .75rem; }
   [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { min-width: calc(50% - .5rem); flex: 1 1 calc(50% - .5rem); }
   .wf-consent { grid-template-columns: 1fr; }
@@ -151,13 +193,16 @@ def inject_css() -> None:
     st.markdown(CSS, unsafe_allow_html=True)
 
 
-def app_header(app_name: str, tagline: str, summary: str) -> None:
-    pill = f'<span class="wf-pill">{summary}</span>' if summary else ""
-    st.markdown(
-        f'<div class="wf-header"><div class="wf-brand">{LOGO}<span class="wf-name">{app_name}</span>'
-        f'<span class="wf-tag">{tagline}</span></div>{pill}</div>',
-        unsafe_allow_html=True,
-    )
+def brand_html(app_name: str, tagline: str) -> str:
+    return f'<div class="wf-brand">{LOGO}<span class="wf-name">{app_name}</span><span class="wf-tag">{tagline}</span></div>'
+
+
+def pill_html(summary: str) -> str:
+    return f'<span class="wf-pill">{summary}</span>' if summary else ""
+
+
+def eyebrow(text: str) -> None:
+    st.markdown(f'<div class="wf-eyebrow">{text}</div>', unsafe_allow_html=True)
 
 
 def page_title(title: str, sub: str = "") -> None:
