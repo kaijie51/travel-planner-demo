@@ -14,6 +14,7 @@ import streamlit as st
 
 import ai
 import scoring
+import ui
 from ai import AIError
 from config import (APP_NAME, CROWD_LABELS, INTEREST_LABELS, INTERESTS, MODEL, PACE_LABELS,
                     STRATEGIES, TAGLINE, TRANSPORT_ICONS, TRANSPORT_MODES)
@@ -23,7 +24,9 @@ from weather import forecast
 
 st.set_page_config(page_title=f"{APP_NAME} · AI group trip planner", page_icon="🧭", layout="wide")
 
-DAY_COLORS = [[230, 85, 13], [49, 130, 189], [49, 163, 84], [117, 107, 177], [214, 39, 40], [140, 86, 75], [23, 190, 207]]
+DAY_COLORS = [[30, 107, 71], [45, 91, 168], [180, 83, 42], [107, 79, 160], [214, 39, 40], [140, 86, 75], [23, 190, 207]]
+TRAVELLER_COLORS = ["#1E6B47", "#2D5BA8", "#B4532A", "#6B4FA0", "#B8860B", "#0E7490", "#9D174D"]
+OPTION_BANDS = [("#EBF5EF", "#155235"), ("#E8EFFA", "#1F3F78"), ("#FDF1DC", "#7A4107")]
 KIND_ICON = {"activity": "📍", "meal": "🍽️", "rest": "☕"}
 CROWD_BADGE = {"low": ":green-badge[👥 low crowd]", "moderate": ":orange-badge[👥 moderate crowd]", "high": ":red-badge[👥 busy]"}
 CONF_BADGE = {"high": "", "medium": ":gray-badge[ℹ️ verify details]", "low": ":red-badge[⚠️ low-confidence info]"}
@@ -135,9 +138,15 @@ def ai_ready() -> bool:
         st.error("No Claude API key configured. See README → *API key*.")
         return False
     if not st.session_state.consent_ai:
-        st.warning("**AI generation is off.** Before the first AI call: your trip details (not names, emails or "
-                   "bookings) are sent to Anthropic's Claude API to generate suggestions.", icon="🔒")
-        st.button("I agree, turn on AI generation", key="agree_btn", on_click=lambda: st.session_state.update(consent_ai=True))
+        with st.container(border=True):
+            st.markdown("### Before we plan with AI")
+            st.markdown("Wayfare will send a de-identified version of your trip to Anthropic's Claude API to build your "
+                        "itineraries. Here is what that means.")
+            st.markdown(ui.CONSENT_HTML, unsafe_allow_html=True)
+            st.caption("Processed abroad by the AI provider. Used only to plan this trip: no model training, no marketing. "
+                       "Nothing is stored on our servers; closing the tab deletes it.")
+            st.button("Allow and generate", key="agree_btn", type="primary",
+                      on_click=lambda: st.session_state.update(consent_ai=True))
         return False
     return True
 
@@ -174,24 +183,24 @@ def selected_entry():
 def sidebar():
     ss = st.session_state
     with st.sidebar:
-        st.title(f"🧭 {APP_NAME}")
+        st.markdown(f'<div class="wf-brand">{ui.LOGO}<span class="wf-name">{APP_NAME}</span></div>', unsafe_allow_html=True)
         st.caption(TAGLINE)
 
-        st.subheader("🎬 Demo mode")
+        st.subheader("Demo mode")
         c1, c2 = st.columns(2)
         c1.button("Load Singapore demo", on_click=load_demo, width="stretch", type="primary")
         c2.button("Start blank trip", on_click=clear_all, width="stretch")
         with st.expander("Presenter script"):
             st.markdown(DEMO_SCRIPT)
 
-        st.subheader("🔒 Privacy & consent")
+        st.subheader("Privacy & consent")
         st.toggle("AI generation", key="consent_ai",
                   help="Allow trip details (de-identified) to be sent to Anthropic's Claude API.")
         st.toggle("Personalisation", key="consent_personal",
                   help="Send each traveller's interest profile (under an alias). Off = generic plan.")
         st.caption("Separate consents, per PDPA guidance. Names, emails and booking references are never sent.")
 
-        st.subheader("⚙️ Planner settings")
+        st.subheader("Planner settings")
         st.slider("Itinerary options to generate", 1, 3, 3, key="n_options",
                   help="Each option is one parallel Claude call with a different planning strategy.")
         st.select_slider("Reasoning effort", ["low", "medium", "high"], "low", key="effort",
@@ -208,7 +217,7 @@ def sidebar():
 def trip_tab():
     ss, v = st.session_state, st.session_state.ver
     t = ss.trip
-    st.subheader("Where, when and how")
+    ui.page_title("Trip details", "Where you're going, when, and how the group likes to travel.")
     c1, c2, c3 = st.columns(3)
     t["destination"] = c1.text_input("Destination city", t["destination"], key=f"dest{v}", placeholder="e.g. Tokyo")
     t["start_date"] = c2.date_input("Start date", t["start_date"], key=f"start{v}")
@@ -233,7 +242,7 @@ def trip_tab():
     t["dietary"] = c2.text_input("Group-wide dietary requirements (optional)", t["dietary"], key=f"diet{v}")
     t["notes"] = st.text_area("Anything else the planner should know? (optional)", t["notes"], key=f"notes{v}", height=70)
 
-    st.subheader("🌦️ Weather outlook")
+    st.markdown("#### Weather outlook")
     if not t["destination"]:
         st.info("Enter a destination to load the forecast.")
         return
@@ -271,9 +280,17 @@ def equal_weights():
 
 def travellers_tab():
     ss = st.session_state
-    st.subheader("Who's travelling?")
-    st.caption("Each traveller sets their own interests (0 = not interested, 5 = love it). **Influence weight** lets "
-               "the group decide whose preferences count more. Keep them equal for a fully even split.")
+    ui.page_title("Travellers", "One profile per person. Rate interests 0 (skip) to 5 (love it). **Influence weight** "
+                  "lets the group decide whose preferences count more; keep them equal for an even split.")
+    w = normalised_weights(ss.travellers)
+    with st.container(border=True):
+        st.markdown("**Influence share in the group**")
+        st.markdown('<div class="wf-share">' + "".join(
+            f'<div style="width:{x * 100:.1f}%;background:{TRAVELLER_COLORS[i % len(TRAVELLER_COLORS)]}"></div>'
+            for i, x in enumerate(w)) + "</div>", unsafe_allow_html=True)
+        st.markdown(" &nbsp; ".join(
+            f'<span style="color:{TRAVELLER_COLORS[i % len(TRAVELLER_COLORS)]}">■</span> **{md(t["name"])}** {x * 100:.0f}%'
+            for i, (t, x) in enumerate(zip(ss.travellers, w))), unsafe_allow_html=True)
     for tr in ss.travellers:
         k = f"tr_{tr['id']}_"
         with st.container(border=True):
@@ -291,16 +308,8 @@ def travellers_tab():
             tr["mobility"] = c2.text_input("Accessibility needs", tr["mobility"], key=k + "mob", placeholder="e.g. avoid stairs")
 
     c1, c2, _ = st.columns([1, 1, 3])
-    c1.button("➕ Add traveller", on_click=add_traveller, width="stretch")
-    c2.button("⚖️ Reset to equal weights", on_click=equal_weights, width="stretch")
-
-    w = normalised_weights(ss.travellers)
-    st.markdown("**Influence share in the group**")
-    st.dataframe(
-        pd.DataFrame({"Traveller": [t["name"] for t in ss.travellers], "Share": [x * 100 for x in w]}),
-        column_config={"Share": st.column_config.ProgressColumn("Share", format="%.0f%%", min_value=0, max_value=100)},
-        hide_index=True, width="content",
-    )
+    c1.button("Add traveller", icon=":material/add:", on_click=add_traveller, type="primary", width="stretch")
+    c2.button("Reset to equal weights", icon=":material/restart_alt:", on_click=equal_weights, width="stretch")
 
 
 # ---------------------------------------------------------------- tab: must-visits
@@ -323,9 +332,9 @@ def fill_demo_link():
 def anchors_tab():
     ss = st.session_state
     dates = trip_dates(ss.trip)
-    st.subheader("📌 Must-visits")
-    st.caption("**Fixed** = non-negotiable date & time (e.g. pre-booked tickets); the AI builds the day around it. "
-               "**Any day** = must be included, the AI picks when.")
+    ui.page_title("Must-visits", "Optional. Add anything the plan has to include: type it in, or paste a TikTok, "
+                  "Instagram or web link. **Fixed** = non-negotiable date and time (e.g. pre-booked tickets). "
+                  "**Any day** = must be included, the AI picks when.")
     if not ss.anchors:
         st.info("No must-visits yet. Add one below or import from a link.")
     for a in ss.anchors:
@@ -364,7 +373,7 @@ def anchors_tab():
                 st.rerun()
 
     st.divider()
-    st.subheader("📲 Import from TikTok, Instagram or the web")
+    st.markdown("#### Import from a link")
     st.caption("Paste the link and the caption (or what you remember). Claude identifies the place. Tracking parameters "
                "are stripped from the link, and the link itself is never fetched.")
     lv = ss.link_ver
@@ -646,7 +655,7 @@ def itinerary_markdown(entry: dict) -> str:
 
 def plan_tab():
     ss = st.session_state
-    st.subheader("Generate itinerary options")
+    ui.page_title("Itineraries", "Generate options for the group, compare them, then refine the one you like.")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Destination", ss.trip["destination"] or "—")
     c2.metric("Days", int(ss.trip["num_days"]))
@@ -665,25 +674,37 @@ def plan_tab():
 
     st.info(VERIFY_NOTE, icon="ℹ️")
     summaries = [scoring.option_summary(e["option"], ss.travellers) for e in ok]
-    st.markdown("#### Compare options")
-    df = pd.DataFrame([{
-        "Option": e["strategy"]["label"],
-        "Fair group score": s["nsw"] * 100,
-        "Avg match": s["weighted_avg"] * 100,
-        "Least-satisfied": s["min"] * 100,
-        "Cost pp": round(s["total_cost"]),
-        "Transit (min)": s["transit_min"],
-        "Walking km": round(s["walking_km"], 1),
-        "Local gems": s["hidden_gems"],
-        "Busy stops": s["high_crowd"],
-    } for e, s in zip(ok, summaries)])
-    pct = lambda: st.column_config.ProgressColumn(format="%.0f", min_value=0, max_value=100)
-    st.dataframe(df, hide_index=True, width="stretch", column_config={
-        "Fair group score": pct(), "Avg match": pct(), "Least-satisfied": pct(),
-        "Cost pp": st.column_config.NumberColumn(format=f"{ss.trip['currency']} %d")})
+    n_days = max(1, int(ss.trip["num_days"]))
+    best = max(range(len(ok)), key=lambda i: summaries[i]["nsw"])
+    ui.page_title(f"Pick one of {len(ok)} itineraries", "Same trip, different ways to balance it. You can fine-tune the one you choose.")
+    cols = st.columns(len(ok))
+    for i, (col, e, s) in enumerate(zip(cols, ok, summaries)):
+        band, ink = OPTION_BANDS[i % len(OPTION_BANDS)]
+        with col, st.container(border=True):
+            badge = '<span class="wf-badge">Best group fit</span>' if i == best and len(ok) > 1 else ""
+            st.markdown(
+                f'<div class="wf-opt-head" style="background:{band};color:{ink}">{badge}'
+                f'<div class="wf-opt-letter">Option {chr(65 + i)}</div>'
+                f'<div class="wf-opt-name">{md(e["strategy"]["label"])}</div></div>'
+                '<div class="wf-stat-grid">'
+                f'<div><div class="wf-stat-k">Cost / person</div><div class="wf-stat-v">{money(s["total_cost"])}</div></div>'
+                f'<div><div class="wf-stat-k">Stops</div><div class="wf-stat-v">{s["n_stops"]}</div></div>'
+                f'<div><div class="wf-stat-k">Walking / day</div><div class="wf-stat-v">{s["walking_km"] / n_days:.1f} km</div></div>'
+                f'<div><div class="wf-stat-k">In transit</div><div class="wf-stat-v">{s["transit_min"] / 60:.1f} h</div></div>'
+                "</div>"
+                + ui.bar_row("Fair score", s["nsw"] * 100) + ui.bar_row("Avg match", s["weighted_avg"] * 100)
+                + ui.bar_row("Least happy", s["min"] * 100),
+                unsafe_allow_html=True)
+            st.markdown(f'<span class="wf-chip">{s["hidden_gems"]} local gems</span>'
+                        f'<span class="wf-chip warn">{s["high_crowd"]} busy stops</span>', unsafe_allow_html=True)
+            st.button("Choose this plan", key=f"choose_{i}", type="primary" if i == best else "secondary", width="stretch",
+                      on_click=lambda i=i: ss.update(sel_radio=i))
 
+    sel = min(ss.get("sel_radio", best), len(ok) - 1)
+    ss.sel_radio = sel
+    st.caption("Switch between your options:")
     sel = st.radio("Review option", range(len(ok)), format_func=lambda i: ok[i]["strategy"]["label"],
-                   horizontal=True, key="sel_radio")
+                   horizontal=True, key="sel_radio", label_visibility="collapsed")
     entry, summ = ok[sel], summaries[sel]
     others = [compare_text(summ, s, ok[i]["strategy"]["label"]) for i, s in enumerate(summaries) if i != sel]
     if others:
@@ -945,12 +966,18 @@ def gate():
 
 
 def main():
+    ui.inject_css()
     gate()
     init()
     sidebar()
-    st.title(f"🧭 {APP_NAME}")
-    st.caption(TAGLINE)
-    tabs = st.tabs(["1 · Trip", "2 · Travellers", "3 · Must-visits & links", "🗺️ Plan", "⚡ Live re-plan", "🔍 Explore", "🔒 Privacy & data"])
+    t = st.session_state.trip
+    parts = [t["destination"] or "New trip"]
+    if t["destination"]:
+        end = t["start_date"] + timedelta(days=int(t["num_days"]) - 1)
+        parts.append(f"{t['start_date'].day} {t['start_date']:%b}–{end.day} {end:%b}")
+    parts.append(f"{len(st.session_state.travellers)} traveller" + ("s" if len(st.session_state.travellers) != 1 else ""))
+    ui.app_header(APP_NAME, "Plan together. Explore further.", " · ".join(parts))
+    tabs = st.tabs(["Trip", "Travellers", "Must-visits", "Itineraries", "Re-plan", "Explore", "Privacy & data"])
     with tabs[0]:
         trip_tab()
     with tabs[1]:
