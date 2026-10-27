@@ -120,6 +120,11 @@ button[data-baseweb="tab"] p { font-size: 14px; }
 .wf-row .n { width: 72px; flex-shrink: 0; }
 .wf-row .v { width: 34px; text-align: right; font-weight: 700; font-size: 12px; }
 .wf-share { display: flex; height: 16px; border-radius: 8px; overflow: hidden; gap: 2px; margin: 8px 0 10px; }
+.wf-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 24px; }
+.wf-legend > div { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.wf-legend .sw { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.wf-legend .nm { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-legend b { margin-left: auto; font-weight: 800; }
 .wf-consent { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 10px 0 14px; }
 .wf-consent > div { padding: 16px; border-radius: 14px; font-size: 13px; line-height: 1.75; }
 .wf-consent .sent { background: #F3FAF6; border: 1px solid var(--wf-tint-border); color: #2F4A3B; }

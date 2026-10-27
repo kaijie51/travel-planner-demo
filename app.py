@@ -396,9 +396,10 @@ def travellers_tab():
         st.markdown('<div class="wf-share">' + "".join(
             f'<div style="width:{x * 100:.1f}%;background:{TRAVELLER_COLORS[i % len(TRAVELLER_COLORS)]}"></div>'
             for i, x in enumerate(w)) + "</div>", unsafe_allow_html=True)
-        st.markdown(" &nbsp; ".join(
-            f'<span style="color:{TRAVELLER_COLORS[i % len(TRAVELLER_COLORS)]}">■</span> **{md(t["name"])}** {x * 100:.0f}%'
-            for i, (t, x) in enumerate(zip(ss.travellers, w))), unsafe_allow_html=True)
+        st.markdown('<div class="wf-legend">' + "".join(
+            f'<div><span class="sw" style="background:{TRAVELLER_COLORS[i % len(TRAVELLER_COLORS)]}"></span>'
+            f'<span class="nm">{html.escape(t["name"])}</span><b>{x * 100:.0f}%</b></div>'
+            for i, (t, x) in enumerate(zip(ss.travellers, w))) + "</div>", unsafe_allow_html=True)
     for tr in ss.travellers:
         k = f"tr_{tr['id']}_"
         with st.container(border=True):
