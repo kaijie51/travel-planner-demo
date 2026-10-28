@@ -4,6 +4,7 @@ Run locally:  streamlit run app.py
 """
 
 import copy
+import html
 import json
 import uuid
 from datetime import date, datetime, time, timedelta
@@ -14,6 +15,7 @@ import streamlit as st
 
 import ai
 import scoring
+import ui
 from ai import AIError
 from config import (APP_NAME, CROWD_LABELS, INTEREST_LABELS, INTERESTS, MODEL, PACE_LABELS,
                     STRATEGIES, TAGLINE, TRANSPORT_ICONS, TRANSPORT_MODES)
@@ -23,10 +25,16 @@ from weather import forecast
 
 st.set_page_config(page_title=f"{APP_NAME} · AI group trip planner", page_icon="🧭", layout="wide")
 
-DAY_COLORS = [[230, 85, 13], [49, 130, 189], [49, 163, 84], [117, 107, 177], [214, 39, 40], [140, 86, 75], [23, 190, 207]]
+DAY_COLORS = [[30, 107, 71], [45, 91, 168], [180, 83, 42], [107, 79, 160], [214, 39, 40], [140, 86, 75], [23, 190, 207]]
+TRAVELLER_COLORS = ["#1E6B47", "#2D5BA8", "#B4532A", "#6B4FA0", "#B8860B", "#0E7490", "#9D174D"]
+OPTION_BANDS = [("#EBF5EF", "#155235"), ("#E8EFFA", "#1F3F78"), ("#FDF1DC", "#7A4107")]
 KIND_ICON = {"activity": "📍", "meal": "🍽️", "rest": "☕"}
 CROWD_BADGE = {"low": ":green-badge[👥 low crowd]", "moderate": ":orange-badge[👥 moderate crowd]", "high": ":red-badge[👥 busy]"}
 CONF_BADGE = {"high": "", "medium": ":gray-badge[ℹ️ verify details]", "low": ":red-badge[⚠️ low-confidence info]"}
+NAV = ["Plan trip", "Itineraries", "Re-plan", "Explore", "Privacy & data"]
+NAV_ICONS = {"Plan trip": "luggage", "Itineraries": "map", "Re-plan": "bolt", "Explore": "explore", "Privacy & data": "lock",
+             "Settings": "tune"}
+STEPS = ["Trip details", "Travellers", "Must-visits"]
 VERIFY_NOTE = ("Venue details (hours, prices, crowd levels, coordinates) come from Claude's general knowledge, "
                "not live data. Verify before booking.")
 
@@ -90,6 +98,7 @@ def reset_plan_state():
     ss.swaps, ss.contrast, ss.extracted, ss.explore = {}, None, None, None
     ss.avoid = []
     ss.pop("sel_radio", None)
+    ss.plan_view = False
 
 
 def init():
@@ -101,18 +110,22 @@ def init():
     ss.update(demo_state())  # Singapore sample is preloaded
     ss.call_log, ss.last_sent = [], None
     ss.consent_ai, ss.consent_personal = False, True
+    ss.n_options, ss.effort = 3, "low"
+    ss.nav, ss.step, ss.loaded, ss.show_script = NAV[0], STEPS[0], "Local Singapore demo", False
     reset_plan_state()
 
 
 def load_demo():
     st.session_state.update(demo_state())
     st.session_state.ver += 1
+    st.session_state.loaded = "Local Singapore demo"
     reset_plan_state()
 
 
 def clear_all():
     st.session_state.update(blank_state())
     st.session_state.ver += 1
+    st.session_state.loaded = "Blank trip"
     st.session_state.call_log, st.session_state.last_sent = [], None
     reset_plan_state()
 
@@ -135,9 +148,15 @@ def ai_ready() -> bool:
         st.error("No Claude API key configured. See README → *API key*.")
         return False
     if not st.session_state.consent_ai:
-        st.warning("**AI generation is off.** Before the first AI call: your trip details (not names, emails or "
-                   "bookings) are sent to Anthropic's Claude API to generate suggestions.", icon="🔒")
-        st.button("I agree, turn on AI generation", key="agree_btn", on_click=lambda: st.session_state.update(consent_ai=True))
+        with ui.card():
+            st.markdown("### Before we plan with AI")
+            st.markdown("Wayfare will send a de-identified version of your trip to Anthropic's Claude API to build your "
+                        "itineraries. Here is what that means.")
+            st.markdown(ui.CONSENT_HTML, unsafe_allow_html=True)
+            st.caption("Processed abroad by the AI provider. Used only to plan this trip: no model training, no marketing. "
+                       "Nothing is stored on our servers; closing the tab deletes it.")
+            st.button("Allow and generate", key="agree_btn", type="primary",
+                      on_click=lambda: st.session_state.update(consent_ai=True))
         return False
     return True
 
@@ -169,86 +188,257 @@ def selected_entry():
     return ok[min(ss.get("sel_radio", 0), len(ok) - 1)]
 
 
-# ---------------------------------------------------------------- sidebar
+# ---------------------------------------------------------------- navigation, header, right-hand panels
+
+def go_nav(name: str):
+    st.session_state.nav = name
+
+
+def go_step(i: int):
+    st.session_state.step = STEPS[i]
+
+
+def keep_widget_state():
+    """Widgets that only render on some pages would lose their value when hidden; re-assigning keeps it."""
+    ss = st.session_state
+    for k in ("consent_ai", "consent_personal", "n_options", "effort", "show_script", "step", "sel_radio"):
+        if k in ss:
+            ss[k] = ss[k]
+
 
 def sidebar():
-    ss = st.session_state
+    """Laptops only; phones hide the sidebar and use the bottom tab bar."""
     with st.sidebar:
-        st.title(f"🧭 {APP_NAME}")
-        st.caption(TAGLINE)
-
-        st.subheader("🎬 Demo mode")
-        c1, c2 = st.columns(2)
-        c1.button("Load Singapore demo", on_click=load_demo, width="stretch", type="primary")
-        c2.button("Start blank trip", on_click=clear_all, width="stretch")
-        with st.expander("Presenter script"):
+        # "Settings" is the phone tab bar's page; CSS hides its entry here (the last option).
+        st.radio("Main navigation", NAV + ["Settings"], key="nav", label_visibility="collapsed", width="stretch",
+                 format_func=lambda n: f":material/{NAV_ICONS[n]}: {n}")
+        st.divider()
+        st.toggle("Presenter script", key="show_script", help="Show or hide the demo talking points.")
+        if st.session_state.show_script:
             st.markdown(DEMO_SCRIPT)
 
-        st.subheader("🔒 Privacy & consent")
-        st.toggle("AI generation", key="consent_ai",
-                  help="Allow trip details (de-identified) to be sent to Anthropic's Claude API.")
-        st.toggle("Personalisation", key="consent_personal",
-                  help="Send each traveller's interest profile (under an alias). Off = generic plan.")
-        st.caption("Separate consents, per PDPA guidance. Names, emails and booking references are never sent.")
 
-        st.subheader("⚙️ Planner settings")
-        st.slider("Itinerary options to generate", 1, 3, 3, key="n_options",
-                  help="Each option is one parallel Claude call with a different planning strategy.")
-        st.select_slider("Reasoning effort", ["low", "medium", "high"], "low", key="effort",
-                         help="Higher = more careful plans but slower. 'low' keeps live demos snappy.")
-        st.caption(f"Model: `{MODEL}` · " + ("✅ API key found" if ai.get_api_key() else "❌ no API key"))
+BOTTOM_NAV = [("Plan trip", "Plan", "luggage"), ("Itineraries", "Itineraries", "map"), ("Re-plan", "Re-plan", "bolt"),
+              ("Explore", "Explore", "explore"), ("Settings", "Settings", "tune")]
 
+
+def bottom_nav():
+    """Phone-only tab bar; CSS pins it to the bottom and hides it on laptops."""
+    with st.container(key="bottomnav", horizontal=True):
+        for page, label, icon in BOTTOM_NAV:
+            st.button(label, key=f"bn_{icon}", icon=f":material/{icon}:", type="tertiary", on_click=go_nav, args=(page,))
+    active = next((icon for page, _, icon in BOTTOM_NAV if page == st.session_state.nav), None)
+    if active:
+        ui.style(f".st-key-bn_{active} button, .st-key-bn_{active} button p {{ color: var(--wf-green) !important; }}")
+
+
+def settings_page():
+    """The phone's Settings tab: the laptop's right-hand panels plus the presenter script."""
+    ui.page_title("Settings", "Demo data, planner options and privacy.")
+    quick_start("sb_")
+    planner_settings("sb_")
+    privacy_note("sb_")
+    with ui.card():
+        st.session_state.sb_show_script = st.session_state.show_script
+        st.toggle("Presenter script", key="sb_show_script", on_change=copy_setting, args=("sb_show_script", "show_script"))
+        if st.session_state.show_script:
+            st.markdown(DEMO_SCRIPT)
+
+
+def header():
+    ss = st.session_state
+    t = ss.trip
+    parts = [t["destination"] or "New trip"]
+    if t["destination"]:
+        end = t["start_date"] + timedelta(days=int(t["num_days"]) - 1)
+        parts.append(f"{t['start_date'].day} {t['start_date']:%b}–{end.day} {end:%b}")
+    n = len(ss.travellers)
+    parts.append(f"{n} traveller{'s' if n != 1 else ''}")
+    with st.container(key="wf_header"):
+        c1, c2, c3 = st.columns([3.2, 2.2, 1.3], vertical_alignment="center")
+        c1.markdown(ui.brand_html(APP_NAME, "Plan together. Explore further."), unsafe_allow_html=True)
+        c2.markdown(ui.pill_html(" · ".join(parts)), unsafe_allow_html=True)
+        c3.button("Privacy & data", icon=":material/verified_user:", on_click=go_nav, args=("Privacy & data",), width="stretch")
+
+
+# The right-hand panels are drawn in two places: the laptop's right column (prefix "") and the phone Settings
+# page (prefix "sb_"). Widget keys must differ, so the phone copy mirrors the main keys and writes changes back.
+
+def quick_start(prefix: str = ""):
+    with ui.card():
+        st.markdown("#### Quick start")
+        st.caption("Try a filled-in demo or start fresh.")
+        st.button("Local Singapore demo", key=prefix + "demo", on_click=load_demo, type="primary", width="stretch")
+        st.button("Blank trip", key=prefix + "blank", on_click=clear_all, width="stretch")
+
+
+SETTINGS = ("consent_ai", "consent_personal", "n_options", "effort")
+
+
+def copy_setting(src: str, dst: str):
+    st.session_state[dst] = st.session_state[src]
+
+
+def planner_settings(prefix: str = ""):
+    ss = st.session_state
+
+    def kw(k: str) -> dict:
+        if not prefix:
+            return {"key": k}
+        ss[prefix + k] = ss[k]  # the copy starts from the main value, and writes its own changes back to it
+        return {"key": prefix + k, "on_change": copy_setting, "args": (prefix + k, k)}
+
+    with ui.card():
+        st.markdown("#### Planner settings")
+        st.toggle("AI generation", **kw("consent_ai"))
+        st.caption("Send de-identified trip details to Anthropic's Claude API.")
+        st.toggle("Personalisation", **kw("consent_personal"))
+        st.caption("Send interest profiles under aliases. Off = generic plan.")
         st.divider()
-        st.button("🗑️ Clear all my data", on_click=clear_all, width="stretch",
-                  help="Deletes everything in this session. Nothing is stored server-side.")
+        st.slider("Itinerary options to generate", 1, 3, **kw("n_options"),
+                  help="Each option is one parallel Claude call with a different planning strategy.")
+        st.select_slider("Reasoning effort", ["low", "medium", "high"], **kw("effort"),
+                         help="Higher = more careful plans but slower. 'low' keeps live demos snappy.")
+        st.caption(f"Model: `{MODEL}` · " + ("API key found" if ai.get_api_key() else "no API key"))
+        st.button("Clear all my data", key=prefix + "clear", icon=":material/delete:", on_click=clear_all,
+                  width="stretch", help="Deletes everything in this session. Nothing is stored server-side.")
+
+
+def privacy_note(prefix: str = ""):
+    with st.container(key=prefix + "wf_note"):
+        st.markdown("#### The AI sees the trip, never the people")
+        st.markdown('<p class="wf-note-txt">Names become aliases, emails and booking references are stripped, and nothing '
+                    'is stored on a server.</p>', unsafe_allow_html=True)
+        st.button("See exactly what gets sent", key=prefix + "see", on_click=go_nav, args=("Privacy & data",),
+                  type="tertiary")
+
+
+def go_generate():
+    st.session_state.nav, st.session_state.autogen = "Itineraries", True
+
+
+def step_footer(i: int):
+    # Same three equal columns as the button rows above, so every button shares one width.
+    c1, _, c3 = st.container(key="stepfoot").columns(3, gap="medium", vertical_alignment="center")
+    if i > 0:
+        c1.button("Back", key=f"back{i}", on_click=go_step, args=(i - 1,), width="stretch")
+    else:
+        c1.caption(f"Step {i + 1} of {len(STEPS)}")
+    if i < len(STEPS) - 1:
+        c3.button(f"Next: {STEPS[i + 1]}", key=f"next{i}", type="primary", on_click=go_step, args=(i + 1,), width="stretch")
+    else:
+        n = st.session_state.n_options
+        c3.button(f"Generate {n} itinerar{'ies' if n != 1 else 'y'}", key="to_plan", icon=":material/auto_awesome:",
+                  type="primary", on_click=go_generate, width="stretch")
+
+
+def step_subtitles() -> list[str]:
+    ss = st.session_state
+    t, n_tr, n_mv = ss.trip, len(ss.travellers), len(ss.anchors)
+    days = int(t["num_days"])
+    return [
+        f"{t['destination']} · {days} day{'s' if days != 1 else ''}" if t["destination"] else "Where, when, budget",
+        f"{n_tr} profile{'s' if n_tr != 1 else ''}",
+        f"{n_mv} added" if n_mv else "Places you won't skip",
+    ]
+
+
+def plan_trip_page():
+    ss = st.session_state
+    main_col, aside = st.columns([2.55, 1], gap="large")
+    with main_col:
+        ui.page_title("Plan a group trip", "Fill in three short steps. Wayfare weighs everyone's interests and builds up "
+                      "to three itinerary options.")
+        with st.container(key="stepbar"):
+            st.radio("Steps", STEPS, key="step", horizontal=True, label_visibility="collapsed", width="stretch")
+        i = STEPS.index(ss.step)
+        (trip_tab, travellers_tab, anchors_tab)[i]()
+        step_footer(i)
+        # After the step has run, so subtitles reflect what was just typed.
+        ui.stepbar_css(step_subtitles(), i)
+    with aside, st.container(key="aside"):
+        quick_start()
+        planner_settings()
+        privacy_note()
 
 
 # ---------------------------------------------------------------- tab: trip
 
+def req(label: str) -> str:
+    return f"{label} :red[*]"
+
+
 def trip_tab():
     ss, v = st.session_state, st.session_state.ver
     t = ss.trip
-    st.subheader("Where, when and how")
-    c1, c2, c3 = st.columns(3)
-    t["destination"] = c1.text_input("Destination city", t["destination"], key=f"dest{v}", placeholder="e.g. Tokyo")
-    t["start_date"] = c2.date_input("Start date", t["start_date"], key=f"start{v}")
-    t["num_days"] = c3.number_input("Number of days", 1, 7, int(t["num_days"]), key=f"ndays{v}")
+    with ui.card():
+        # Rows sit in keyed containers so the phone layout can pair fields two-up (see ui.py, "phone").
+        c1, c2 = st.container(key="trow_head").columns([3, 1.6], vertical_alignment="top")
+        c1.markdown("## Trip details")
+        c1.caption("Fields marked :red[*] are required.")
+        c2.markdown(f'<div class="wf-loaded-wrap"><span class="wf-loaded">Loaded: {html.escape(ss.loaded)}</span></div>',
+                    unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns(3)
-    t["day_start"] = c1.time_input("Day starts", to_time(t["day_start"]), key=f"ds{v}", step=1800).strftime("%H:%M")
-    t["day_end"] = c2.time_input("Day ends", to_time(t["day_end"]), key=f"de{v}", step=1800).strftime("%H:%M")
-    t["crowd_tolerance"] = c3.select_slider("Crowd tolerance", list(CROWD_LABELS), t["crowd_tolerance"],
-                                            format_func=CROWD_LABELS.get, key=f"crowd{v}")
+        ui.eyebrow("Where & when")
+        c1, c2, c3 = st.container(key="trow_where").columns(3)
+        t["destination"] = c1.text_input(req("Destination city"), t["destination"], key=f"dest{v}", placeholder="e.g. Tokyo")
+        t["start_date"] = c2.date_input(req("Start date"), t["start_date"], key=f"start{v}")
+        t["num_days"] = c3.number_input(req("Number of days"), 1, 7, int(t["num_days"]), key=f"ndays{v}")
+        last = t["start_date"] + timedelta(days=int(t["num_days"]) - 1)
+        ui.hint(f"{t['start_date']:%a %d} – {last:%a %d %b}", c3)
+        c1, c2, c3 = st.container(key="trow_when").columns(3)
+        t["day_start"] = c1.time_input(req("Day starts"), to_time(t["day_start"]), key=f"ds{v}", step=1800).strftime("%H:%M")
+        t["day_end"] = c2.time_input(req("Day ends"), to_time(t["day_end"]), key=f"de{v}", step=1800).strftime("%H:%M")
+        t["accommodation"] = c3.text_input(req("Accommodation"), t["accommodation"], key=f"acc{v}",
+                                           placeholder="Hotel name or area")
+        ui.hint("Days start and end here. An area is enough.", c3)
 
-    c1, c2, c3 = st.columns(3)
-    t["budget"] = c1.number_input("Budget per person, whole trip (excl. hotel)", 0, 100000, int(t["budget"]), 50, key=f"bud{v}")
-    t["currency"] = c2.text_input("Currency", t["currency"], key=f"cur{v}", max_chars=5)
-    t["transport_modes"] = c3.multiselect("Allowed transport", TRANSPORT_MODES, t["transport_modes"], key=f"tm{v}")
-    if not t["transport_modes"]:
-        st.warning("Pick at least one transport mode.")
+        st.divider()
+        ui.eyebrow("Budget & crowds")
+        c1, c2, c3 = st.container(key="trow_budget").columns([2, 1, 3])
+        t["budget"] = c1.number_input(req("Budget per person, whole trip"), 0, 100000, int(t["budget"]), 50, key=f"bud{v}")
+        ui.hint("Excludes accommodation.", c1)
+        currencies = list(dict.fromkeys([t["currency"], "SGD", "MYR", "USD", "EUR", "GBP", "JPY", "AUD"]))
+        t["currency"] = c2.selectbox(req("Currency"), currencies, key=f"cur{v}")
+        t["crowd_tolerance"] = c3.select_slider("Crowd tolerance", list(CROWD_LABELS), t["crowd_tolerance"],
+                                                format_func=CROWD_LABELS.get, key=f"crowd{v}")
 
-    c1, c2 = st.columns(2)
-    t["accommodation"] = c1.text_input("Accommodation (hotel name or area)", t["accommodation"], key=f"acc{v}",
-                                       help="Each day starts and ends here.")
-    t["dietary"] = c2.text_input("Group-wide dietary requirements (optional)", t["dietary"], key=f"diet{v}")
-    t["notes"] = st.text_area("Anything else the planner should know? (optional)", t["notes"], key=f"notes{v}", height=70)
+        st.divider()
+        ui.eyebrow("Allowed transport *")
+        with st.container(key="transport"):
+            cols = st.columns(len(TRANSPORT_MODES))
+            t["transport_modes"] = [m for col, m in zip(cols, TRANSPORT_MODES)
+                                    if col.checkbox(m, m in t["transport_modes"], key=f"tm_{m}{v}", width="stretch")]
+        if not t["transport_modes"]:
+            st.warning("Pick at least one transport mode.")
 
-    st.subheader("🌦️ Weather outlook")
-    if not t["destination"]:
-        st.info("Enter a destination to load the forecast.")
-        return
-    wx = forecast(t["destination"], t["start_date"], int(t["num_days"]))
-    if wx["days"]:
-        cols = st.columns(len(trip_dates(t)))
-        for col, d in zip(cols, trip_dates(t)):
-            w = wx["days"].get(d)
-            with col.container(border=True):
-                st.markdown(f"**{fmt_date(d)}**")
-                if w:
-                    st.markdown(f"{w['summary']}  \n{w['tmin']:.0f}–{w['tmax']:.0f}°C · 🌧 {w['rain_prob']}%")
-                else:
-                    st.caption("No forecast yet")
-    st.caption(f"Source: {wx['source']}. {wx['note']}")
+        st.divider()
+        c1, c2 = st.columns(2)
+        t["dietary"] = c1.text_input("Group-wide dietary requirements (optional)", t["dietary"], key=f"diet{v}")
+        ui.hint("Applied to every meal stop. Individual needs go in each traveller profile.", c1)
+        t["notes"] = c2.text_area("Anything else the planner should know? (optional)", t["notes"], key=f"notes{v}",
+                                  height=110, max_chars=500)
+        ui.hint("Emails and names here are removed before sending.", c2)
+
+    with ui.card():
+        st.markdown(f"#### Weather outlook{' · ' + t['destination'] if t['destination'] else ''}")
+        if not t["destination"]:
+            st.info("Enter a destination to load the forecast.")
+            return
+        st.caption("Open-Meteo forecast for your travel dates. Wet days get indoor backups.")
+        wx = forecast(t["destination"], t["start_date"], int(t["num_days"]))
+        if wx["days"]:
+            cards = ""
+            for n, d in enumerate(trip_dates(t), 1):
+                w = wx["days"].get(d)
+                if not w:
+                    continue
+                p = int(w["rain_prob"])
+                cards += (f'<div class="wf-wx"><div class="top"><b>{fmt_date(d)}</b><span>Day {n}</span></div>'
+                          f'<div class="temp"><b>{w["tmax"]:.0f}°</b> / {w["tmin"]:.0f}°</div><div>{html.escape(str(w["summary"]))}</div>'
+                          f'<div class="pop"><div class="wf-bar"><span style="width:{p}%"></span></div>PoP {p}%</div></div>')
+            st.markdown(f'<div class="wf-wx-grid">{cards}</div>', unsafe_allow_html=True)
+        st.caption(f"Source: {wx['source']}. {wx['note']}")
 
 
 # ---------------------------------------------------------------- tab: travellers
@@ -269,38 +459,75 @@ def equal_weights():
         st.session_state.pop(f"tr_{t['id']}_weight", None)
 
 
+def traveller_card(i: int, tr: dict, al: dict, n_travellers: int):
+    k = f"tr_{tr['id']}_"
+    color = TRAVELLER_COLORS[i % len(TRAVELLER_COLORS)]
+    is_open = st.session_state.setdefault(k + "open", True)
+    with ui.card():
+        h1, h2 = st.columns([4, 1], vertical_alignment="center")
+        with h1.container(horizontal=True, vertical_alignment="center"):
+            head = st.empty()  # filled once the name field below has returned this run's value
+            # Phone-only (hidden on laptops by CSS): folds the profile body away.
+            st.button("", key=k + "tog", icon=":material/expand_less:" if is_open else ":material/expand_more:",
+                      type="tertiary", help="Show or hide this profile",
+                      on_click=lambda: st.session_state.update({k + "open": not is_open}))
+        h2.button("Remove", key=k + "rm", icon=":material/delete:", on_click=remove_traveller, args=(tr["id"],),
+                  disabled=n_travellers == 1, width="stretch")
+        if not is_open:
+            ui.style(f"@media (max-width: 640px) {{ .st-key-{k}body {{ display: none; }} }}")
+        body = st.container(key=k + "body")
+    with body:
+        c1, c2, c3 = st.columns(3, gap="medium")
+        tr["name"] = c1.text_input("Name (stays on this device)", tr["name"], key=k + "name")
+        head.markdown(f'<div class="wf-person"><span class="wf-av" style="background:{color}">'
+                      f'{html.escape((tr["name"].strip() or "?")[0].upper())}</span>'
+                      f'<span class="wf-person-name">{html.escape(tr["name"])}</span>'
+                      f'<span class="wf-alias">AI sees: {al[tr["id"]]}</span></div>', unsafe_allow_html=True)
+        tr["weight"] = c2.slider("Influence weight", 0.0, 1.0, float(tr["weight"]), 0.1, key=k + "weight")
+        tr["pace"] = c3.select_slider("Preferred pace", list(PACE_LABELS), tr["pace"], format_func=PACE_LABELS.get, key=k + "pace")
+        ui.eyebrow("Interests")
+        with st.container(key=k + "interests"):
+            for row in (INTERESTS[:4], INTERESTS[4:]):
+                cols = st.columns(4, gap="medium")
+                for col, d in zip(cols, row):
+                    tr["interests"][d] = col.slider(INTEREST_LABELS[d], 0, 5, int(tr["interests"][d]), key=k + d)
+        c1, c2 = st.columns(2)
+        tr["dietary"] = c1.text_input("Dietary needs", tr["dietary"], key=k + "diet", placeholder="e.g. vegetarian, halal")
+        tr["mobility"] = c2.text_input("Accessibility needs", tr["mobility"], key=k + "mob", placeholder="e.g. avoid stairs")
+
+
 def travellers_tab():
     ss = st.session_state
-    st.subheader("Who's travelling?")
-    st.caption("Each traveller sets their own interests (0 = not interested, 5 = love it). **Influence weight** lets "
-               "the group decide whose preferences count more. Keep them equal for a fully even split.")
-    for tr in ss.travellers:
-        k = f"tr_{tr['id']}_"
-        with st.container(border=True):
-            c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
-            tr["name"] = c1.text_input("Name (stays on this device)", tr["name"], key=k + "name")
-            tr["weight"] = c2.slider("Influence weight", 0.0, 1.0, float(tr["weight"]), 0.1, key=k + "weight")
-            tr["pace"] = c3.select_slider("Preferred pace", list(PACE_LABELS), tr["pace"], format_func=PACE_LABELS.get, key=k + "pace")
-            c4.write("")
-            c4.button("Remove", key=k + "rm", on_click=remove_traveller, args=(tr["id"],), disabled=len(ss.travellers) == 1)
-            cols = st.columns(len(INTERESTS))
-            for col, d in zip(cols, INTERESTS):
-                tr["interests"][d] = col.slider(INTEREST_LABELS[d], 0, 5, int(tr["interests"][d]), key=k + d)
-            c1, c2 = st.columns(2)
-            tr["dietary"] = c1.text_input("Dietary needs", tr["dietary"], key=k + "diet", placeholder="e.g. vegetarian, halal")
-            tr["mobility"] = c2.text_input("Accessibility needs", tr["mobility"], key=k + "mob", placeholder="e.g. avoid stairs")
-
-    c1, c2, _ = st.columns([1, 1, 3])
-    c1.button("➕ Add traveller", on_click=add_traveller, width="stretch")
-    c2.button("⚖️ Reset to equal weights", on_click=equal_weights, width="stretch")
+    c1, c2 = st.columns([1, 1], vertical_alignment="center")
+    with c1:
+        ui.page_title("Travellers")
+    # Laptops; phones hide this and use the pair under the share bar instead.
+    with c2, st.container(key="trav_btns", horizontal=True, horizontal_alignment="right"):
+        st.button("Reset to equal weights", icon=":material/restart_alt:", on_click=equal_weights)
+        st.button("Add traveller", icon=":material/add:", on_click=add_traveller, type="primary")
+    ui.subtitle("One profile per person. Rate interests 0 (skip) to 5 (love it). **Influence weight** lets the group "
+                "decide whose preferences count more; keep them equal for an even split.")
+    # Drawn after the profile cards below, which read this run's slider values; drawing first lagged one move behind.
+    share_card = ui.card()
+    al = aliases(ss.travellers)
+    for i, tr in enumerate(ss.travellers):
+        traveller_card(i, tr, al, len(ss.travellers))
 
     w = normalised_weights(ss.travellers)
-    st.markdown("**Influence share in the group**")
-    st.dataframe(
-        pd.DataFrame({"Traveller": [t["name"] for t in ss.travellers], "Share": [x * 100 for x in w]}),
-        column_config={"Share": st.column_config.ProgressColumn("Share", format="%.0f%%", min_value=0, max_value=100)},
-        hide_index=True, width="content",
-    )
+    with share_card:
+        st.markdown("**Influence share in the group**")
+        st.markdown('<div class="wf-share">' + "".join(
+            f'<div style="width:{x * 100:.1f}%;background:{TRAVELLER_COLORS[i % len(TRAVELLER_COLORS)]}"></div>'
+            for i, x in enumerate(w)) + "</div>", unsafe_allow_html=True)
+        st.markdown('<div class="wf-legend">' + "".join(
+            f'<div><span class="sw" style="background:{TRAVELLER_COLORS[i % len(TRAVELLER_COLORS)]}"></span>'
+            f'<span class="nm">{html.escape(t["name"])}</span><b>{x * 100:.0f}%</b></div>'
+            for i, (t, x) in enumerate(zip(ss.travellers, w))) + "</div>", unsafe_allow_html=True)
+        with st.container(key="share_btns"):  # phones only (hidden on laptops)
+            c1, c2 = st.columns(2, gap="small")
+            c1.button("Reset to equal", key="share_reset", on_click=equal_weights, width="stretch")
+            c2.button("Add traveller", key="share_add", icon=":material/add:", on_click=add_traveller, type="primary",
+                      width="stretch")
 
 
 # ---------------------------------------------------------------- tab: must-visits
@@ -320,91 +547,156 @@ def fill_demo_link():
     ss.link_ver += 1
 
 
-def anchors_tab():
+PIN_SVG = ('<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E6B47" stroke-width="1.8" '
+           'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0'
+           'c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>')
+LINK_SVG = ('<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E6B47" stroke-width="1.8" '
+            'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0'
+            '-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>')
+
+
+def link_platform(url: str) -> str | None:
+    if "tiktok.com" in url:
+        return "TikTok"
+    if "instagram.com" in url:
+        return "Instagram"
+    return "Web" if url.strip() else None
+
+
+def anchor_source(a: dict) -> str:
+    if a.get("source_url"):
+        return link_platform(a["source_url"]) or "Web"
+    return "Explore" if (a.get("note") or "").startswith("From Explore") else "Manual"
+
+
+def add_manual():
     ss = st.session_state
-    dates = trip_dates(ss.trip)
-    st.subheader("📌 Must-visits")
-    st.caption("**Fixed** = non-negotiable date & time (e.g. pre-booked tickets); the AI builds the day around it. "
-               "**Any day** = must be included, the AI picks when.")
-    if not ss.anchors:
-        st.info("No must-visits yet. Add one below or import from a link.")
-    for a in ss.anchors:
-        k = f"an_{a['id']}_"
-        with st.container(border=True):
-            c1, c2, c3, c4, c5, c6 = st.columns([3, 1.6, 1.6, 1.2, 1.2, 0.8])
-            a["name"] = c1.text_input("Place / activity", a["name"], key=k + "name")
-            a["kind"] = c2.radio("Type", ["fixed", "flexible"], ["fixed", "flexible"].index(a["kind"]), key=k + "kind",
-                                 format_func={"fixed": "🔒 Fixed", "flexible": "📌 Any day"}.get)
-            if a["kind"] == "fixed":
-                idx = dates.index(a["date"]) if a["date"] in dates else 0
-                if a["date"] and a["date"] not in dates:
-                    c3.caption("⚠️ date outside trip, moved to Day 1")
-                a["date"] = c3.selectbox("Date", dates, idx, key=k + "date",
-                                         format_func=lambda d: f"Day {dates.index(d) + 1} · {fmt_date(d)}")
-                a["time"] = c4.time_input("Start", to_time(a["time"] or "10:00"), key=k + "time", step=900).strftime("%H:%M")
-            else:
-                c3.caption("Any day")
-            a["duration_min"] = c5.number_input("Minutes", 15, 600, int(a["duration_min"]), 15, key=k + "dur")
-            c6.write("")
-            c6.button("✕", key=k + "rm", on_click=remove_anchor, args=(a["id"],), help="Remove")
-            if a.get("note") or a.get("source_url"):
-                st.caption(f"📝 {a['note']}" + (f" · source: {a['source_url']}" if a.get("source_url") else ""))
+    v = ss.add_ver
+    name = (ss.get(f"add_name{v}") or "").strip()
+    if not name:
+        ss.add_error = True
+        return
+    fixed = ss.get(f"add_kind{v}") != "Any day"
+    start = ss.get(f"add_time{v}") or time(10, 0)
+    add_anchor(name, "fixed" if fixed else "flexible", ss.get(f"add_date{v}") if fixed else "",
+               start.strftime("%H:%M") if fixed else "", int(ss.get(f"add_dur{v}") or 90),
+               (ss.get(f"add_note{v}") or "").strip())
+    ss.add_ver += 1  # fresh keys empty the form
 
-    with st.expander("➕ Add a must-visit manually"):
-        with st.form("add_anchor", clear_on_submit=True, border=False):
-            c1, c2, c3, c4, c5 = st.columns([3, 1.5, 1.5, 1.2, 1.2])
-            name = c1.text_input("Place / activity")
-            kind = c2.radio("Type", ["flexible", "fixed"], format_func={"fixed": "🔒 Fixed", "flexible": "📌 Any day"}.get)
-            d = c3.selectbox("Date (if fixed)", dates, format_func=fmt_date)
-            t = c4.time_input("Start (if fixed)", time(10, 0), step=900)
-            dur = c5.number_input("Minutes", 15, 600, 90, 15)
-            note = st.text_input("Note (optional)")
-            if st.form_submit_button("Add") and name.strip():
-                add_anchor(name.strip(), kind, d if kind == "fixed" else "", t.strftime("%H:%M") if kind == "fixed" else "", dur, note)
-                st.rerun()
 
-    st.divider()
-    st.subheader("📲 Import from TikTok, Instagram or the web")
-    st.caption("Paste the link and the caption (or what you remember). Claude identifies the place. Tracking parameters "
-               "are stripped from the link, and the link itself is never fetched.")
+def add_extracted(kind: str):
+    ss = st.session_state
+    p, dates = ss.extracted["place"], trip_dates(ss.trip)
+    if kind == "fixed":
+        add_anchor(p["place_name"], "fixed", dates[0], "10:00", p["suggested_duration_min"],
+                   note="Imported from link", url=ss.extracted["url"])
+    else:
+        add_anchor(p["place_name"], "flexible", duration=p["suggested_duration_min"],
+                   note=f"Imported from link: {p['why_people_go']}", url=ss.extracted["url"])
+    ss.extracted = None
+
+
+def add_manually_card(dates: list[str]):
+    ss = st.session_state
+    v = ss.add_ver
+    with ui.card():
+        st.markdown(f'<div class="wf-box-title">{PIN_SVG}Add manually</div>', unsafe_allow_html=True)
+        st.text_input("Place or activity", key=f"add_name{v}", placeholder="e.g. Gardens by the Bay")
+        kind = st.segmented_control("When should it happen?", ["Fixed", "Any day"], default="Fixed",
+                                    key=f"add_kind{v}", width="stretch")
+        fixed = kind != "Any day"
+        ui.hint("<b>Fixed</b>: a non-negotiable date and time, like pre-booked tickets. The AI builds the day around it."
+                if fixed else "<b>Any day</b>: it must be in the plan, and the AI picks the day it fits best.")
+        with st.container(key=f"fixedbox{v}"):
+            c1, c2 = st.columns(2, gap="small")
+            c1.selectbox("Date", dates, format_func=fmt_date, key=f"add_date{v}", disabled=not fixed)
+            c2.time_input("Start time", time(10, 0), step=900, key=f"add_time{v}", disabled=not fixed)
+            c1, _ = st.columns(2, gap="small")
+            c1.number_input("Duration (min)", 15, 600, 90, 15, key=f"add_dur{v}")
+        st.text_input("Note (optional)", key=f"add_note{v}")
+        ui.hint("Booking references are removed before anything is sent.")
+        st.button("Add must-visit", icon=":material/add:", type="primary", on_click=add_manual)
+        if ss.pop("add_error", False):
+            st.warning("Enter a place or activity first.")
+
+
+def import_link_card():
+    ss = st.session_state
     lv = ss.link_ver
-    url = st.text_input("Link", ss.link_url, key=f"lurl{lv}", placeholder="https://www.tiktok.com/@…")
-    cap = st.text_area("Caption / description", ss.link_caption, key=f"lcap{lv}", height=70)
-    c1, c2, _ = st.columns([1.3, 1.3, 3])
-    c1.button("Use demo Instagram link", on_click=fill_demo_link, width="stretch")
-    if c2.button("🔎 Identify place", type="primary", disabled=not (url or cap), width="stretch") and ai_ready():
-        log = []
-        res = run_ai("Identify place from link", ai.extract_link, clean_url(url),
-                     scrub(cap, ss.travellers, log, "caption"), ss.trip["destination"])
-        if res:
-            ss.extracted = {"place": res.model_dump(), "url": clean_url(url)}
+    with ui.card():
+        st.markdown(f'<div class="wf-box-title">{LINK_SVG}Import from a link</div>', unsafe_allow_html=True)
+        chips = st.empty()  # filled once the link field below has this run's value
+        url = st.text_input("Paste link", ss.link_url, key=f"lurl{lv}", placeholder="https://www.tiktok.com/@…")
+        on = link_platform(url)
+        chips.markdown('<div class="wf-src">' + "".join(
+            f'<span class="{"on" if p == on else ""}">{p}</span>' for p in ("TikTok", "Instagram", "Web")) + "</div>",
+            unsafe_allow_html=True)
+        cap = st.text_area("Caption or what you remember", ss.link_caption, key=f"lcap{lv}", height=88)
+        c1, c2 = st.columns(2, gap="small")
+        c1.button("Use demo link", on_click=fill_demo_link, width="stretch")
+        if c2.button("Identify place", icon=":material/search:", type="primary", disabled=not (url or cap),
+                     width="stretch") and ai_ready():
+            log = []
+            res = run_ai("Identify place from link", ai.extract_link, clean_url(url),
+                         scrub(cap, ss.travellers, log, "caption"), ss.trip["destination"])
+            if res:
+                ss.extracted = {"place": res.model_dump(), "url": clean_url(url)}
+        ui.hint("Tracking parameters are stripped. Only the place name is sent to the AI, never the link.")
 
-    if ss.extracted:
-        p = ss.extracted["place"]
-        with st.container(border=True):
+        if ss.extracted:
+            p = ss.extracted["place"]
             if not p["found"]:
                 st.warning(f"Couldn't identify a specific place. {md(p['notes'])}")
-            else:
-                conf_color = "green" if p["confidence"] == "high" else "orange"
-                st.markdown(f"**{md(p['place_name'])}** · {md(p['area'])}, {md(p['city'])}  \n"
-                            f":blue-badge[{md(p['category'])}] :gray-badge[~{p['suggested_duration_min']} min] "
-                            f":{conf_color}-badge[confidence: {p['confidence']}]")
-                st.write(md(p["why_people_go"]))
-                if p["notes"]:
-                    st.caption(md(p["notes"]))
-                if not p["matches_destination"]:
-                    st.warning(f"This doesn't look like it's in {ss.trip['destination']}.")
-                c1, c2, _ = st.columns([1.4, 1.4, 3])
-                if c1.button("📌 Add as must-visit (any day)"):
-                    add_anchor(p["place_name"], "flexible", duration=p["suggested_duration_min"],
-                               note=f"Imported from link: {p['why_people_go']}", url=ss.extracted["url"])
-                    ss.extracted = None
-                    st.rerun()
-                if c2.button("🔒 Add as fixed (set time above)"):
-                    add_anchor(p["place_name"], "fixed", dates[0], "10:00", p["suggested_duration_min"],
-                               note="Imported from link", url=ss.extracted["url"])
-                    ss.extracted = None
-                    st.rerun()
+                return
+            st.markdown(
+                f'<div class="wf-found"><span class="ok">✓</span><div><b>Identified: {html.escape(p["place_name"])}</b>'
+                f'{html.escape(p["area"])}, {html.escape(p["city"])} · {html.escape(p["category"])} · '
+                f'~{p["suggested_duration_min"]} min · confidence {p["confidence"]}<br>{html.escape(p["why_people_go"])}'
+                f'</div></div>', unsafe_allow_html=True)
+            if not p["matches_destination"]:
+                st.warning(f"This doesn't look like it's in {ss.trip['destination']}.")
+            c1, c2 = st.columns(2, gap="small")
+            c1.button("Add as any day", on_click=add_extracted, args=("flexible",), width="stretch")
+            c2.button("Add as fixed", on_click=add_extracted, args=("fixed",), width="stretch")
+
+
+def must_visit_list(dates: list[str]):
+    ss = st.session_state
+    with ui.card():
+        st.markdown(f'<div class="wf-list-head"><div class="ttl">Your must-visits <span>· {len(ss.anchors)}</span></div>'
+                    '<small>The AI schedules "Any day" items where they fit best.</small></div>', unsafe_allow_html=True)
+        if not ss.anchors:
+            st.caption("Nothing yet. Add a place above, or import one from a link.")
+        for a in ss.anchors:
+            if a["kind"] == "fixed" and a["date"] not in dates:
+                a["date"] = dates[0]  # the trip dates moved; keep it inside the trip
+            detail = " · ".join(filter(None, [f"{a['duration_min']} min", a.get("note", "")]))
+            # The duration rides in the Fixed tag on phones, where the detail line is hidden.
+            when = (f'<span class="wf-tag-fixed">Fixed · {fmt_date(a["date"])}, {a["time"]}'
+                    f'<span class="ph">, {a["duration_min"]} min</span></span>' if a["kind"] == "fixed"
+                    else '<span class="wf-tag-any">Any day</span>')
+            with st.container(key=f"mrow_{a['id']}"):
+                c1, c2 = st.columns([5, 1.1], vertical_alignment="center")
+                c1.markdown(f'<div class="wf-mrow"><span class="ico">{PIN_SVG}</span><div class="txt">'
+                            f'<b>{html.escape(a["name"])}</b><small>{html.escape(detail)}</small></div>'
+                            f'<span class="tags"><span class="wf-tag-src">{anchor_source(a)}</span>{when}</span></div>',
+                            unsafe_allow_html=True)
+                c2.button("Remove", key=f"an_{a['id']}_rm", icon=":material/delete:", on_click=remove_anchor,
+                          args=(a["id"],), width="stretch")
+
+
+def anchors_tab():
+    ss = st.session_state
+    ss.setdefault("add_ver", 0)
+    dates = trip_dates(ss.trip)
+    ui.page_title("Must-visits", "Optional. Add anything the plan has to include: type it in, or paste a TikTok, "
+                  "Instagram or web link.")
+    left, right = st.columns(2, gap="medium")
+    with left:
+        add_manually_card(dates)
+    with right:
+        import_link_card()
+    must_visit_list(dates)
 
 
 # ---------------------------------------------------------------- map
@@ -478,7 +770,7 @@ def compare_text(sel: dict, other: dict, label: str) -> str:
 
 def fairness_panel(option: dict, summary: dict):
     ss = st.session_state
-    st.markdown("#### ⚖️ Group balance")
+    st.markdown("#### Group balance")
     c1, c2, c3 = st.columns(3)
     c1.metric("Fair group score", f"{summary['nsw'] * 100:.0f}", help="Weighted Nash social welfare: high only when every member is reasonably served.")
     c2.metric("Least-satisfied member", f"{summary['min'] * 100:.0f}")
@@ -507,7 +799,7 @@ def fairness_panel(option: dict, summary: dict):
 def render_stop(day: dict, si: int, stop: dict, prev_leg: dict | None):
     ss = st.session_state
     u = stop["_uid"]
-    with st.container(border=True):
+    with ui.card():
         c1, c2, c3 = st.columns([0.9, 6, 1.6])
         c1.markdown(f"**{stop['start_time']}**  \n<span style='opacity:.6'>{stop['end_time']}</span>", unsafe_allow_html=True)
         badges = []
@@ -622,6 +914,7 @@ def generate(strategies: list[dict], extra_anchors=None, extra_notes="", replace
     else:
         ss.options = entries
         ss.pop("sel_radio", None)
+        ss.plan_view = False  # fresh options: back to the list to compare them
     ss.swaps, ss.contrast, ss.confirmed, ss.pending_replan = {}, None, None, None
     return True
 
@@ -646,7 +939,11 @@ def itinerary_markdown(entry: dict) -> str:
 
 def plan_tab():
     ss = st.session_state
-    st.subheader("Generate itinerary options")
+    opened = [e for e in ss.options if e["option"]]
+    if ss.get("plan_view") and opened:
+        plan_detail(opened)
+        return
+    ui.page_title("Itineraries", "Generate options for the group, compare them, then open the one you like.")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Destination", ss.trip["destination"] or "—")
     c2.metric("Days", int(ss.trip["num_days"]))
@@ -655,7 +952,10 @@ def plan_tab():
     can = bool(ss.trip["destination"] and ss.trip["transport_modes"])
     if not can:
         st.warning("Add a destination and at least one transport mode on the Trip tab.")
-    if st.button(f"✨ Generate {ss.n_options} itinerary option(s)", type="primary", disabled=not can) and ai_ready():
+    clicked = st.button(f"Generate {ss.n_options} itinerary option(s)", icon=":material/auto_awesome:", type="primary",
+                        disabled=not can)
+    # "Generate itineraries" on the Must-visits step lands here with autogen set.
+    if (clicked or (ss.pop("autogen", False) and can)) and ai_ready():
         generate(STRATEGIES[: ss.n_options])
 
     ok = [e for e in ss.options if e["option"]]
@@ -665,26 +965,46 @@ def plan_tab():
 
     st.info(VERIFY_NOTE, icon="ℹ️")
     summaries = [scoring.option_summary(e["option"], ss.travellers) for e in ok]
-    st.markdown("#### Compare options")
-    df = pd.DataFrame([{
-        "Option": e["strategy"]["label"],
-        "Fair group score": s["nsw"] * 100,
-        "Avg match": s["weighted_avg"] * 100,
-        "Least-satisfied": s["min"] * 100,
-        "Cost pp": round(s["total_cost"]),
-        "Transit (min)": s["transit_min"],
-        "Walking km": round(s["walking_km"], 1),
-        "Local gems": s["hidden_gems"],
-        "Busy stops": s["high_crowd"],
-    } for e, s in zip(ok, summaries)])
-    pct = lambda: st.column_config.ProgressColumn(format="%.0f", min_value=0, max_value=100)
-    st.dataframe(df, hide_index=True, width="stretch", column_config={
-        "Fair group score": pct(), "Avg match": pct(), "Least-satisfied": pct(),
-        "Cost pp": st.column_config.NumberColumn(format=f"{ss.trip['currency']} %d")})
+    n_days = max(1, int(ss.trip["num_days"]))
+    best = max(range(len(ok)), key=lambda i: summaries[i]["nsw"])
+    ui.page_title(f"Pick one of {len(ok)} itineraries", "Same trip, different ways to balance it. Open one to see it day by "
+                  "day and fine-tune it.")
+    cols = st.columns(len(ok))
+    for i, (col, e, s) in enumerate(zip(cols, ok, summaries)):
+        band, ink = OPTION_BANDS[i % len(OPTION_BANDS)]
+        with col, ui.card():
+            badge = '<span class="wf-badge">Best group fit</span>' if i == best and len(ok) > 1 else ""
+            st.markdown(
+                f'<div class="wf-opt-head" style="background:{band};color:{ink}">{badge}'
+                f'<div class="wf-opt-letter">Option {chr(65 + i)}</div>'
+                f'<div class="wf-opt-name">{md(e["strategy"]["label"])}</div></div>'
+                '<div class="wf-stat-grid">'
+                f'<div><div class="wf-stat-k">Cost / person</div><div class="wf-stat-v">{money(s["total_cost"])}</div></div>'
+                f'<div><div class="wf-stat-k">Stops</div><div class="wf-stat-v">{s["n_stops"]}</div></div>'
+                f'<div><div class="wf-stat-k">Walking / day</div><div class="wf-stat-v">{s["walking_km"] / n_days:.1f} km</div></div>'
+                f'<div><div class="wf-stat-k">In transit</div><div class="wf-stat-v">{s["transit_min"] / 60:.1f} h</div></div>'
+                "</div>"
+                + ui.bar_row("Fair score", s["nsw"] * 100) + ui.bar_row("Avg match", s["weighted_avg"] * 100)
+                + ui.bar_row("Least happy", s["min"] * 100),
+                unsafe_allow_html=True)
+            st.markdown(f'<span class="wf-chip">{s["hidden_gems"]} local gems</span>'
+                        f'<span class="wf-chip warn">{s["high_crowd"]} busy stops</span>', unsafe_allow_html=True)
+            st.button("View this plan", key=f"choose_{i}", type="primary" if i == best else "secondary", width="stretch",
+                      on_click=lambda i=i: ss.update(sel_radio=i, plan_view=True))
 
-    sel = st.radio("Review option", range(len(ok)), format_func=lambda i: ok[i]["strategy"]["label"],
-                   horizontal=True, key="sel_radio")
+
+def plan_detail(ok: list[dict]):
+    """One itinerary option on its own page; Back returns to the list of options."""
+    ss = st.session_state
+    summaries = [scoring.option_summary(e["option"], ss.travellers) for e in ok]
+    sel = min(ss.get("sel_radio", 0), len(ok) - 1)
     entry, summ = ok[sel], summaries[sel]
+    with st.container(key="detail_back"):
+        st.button("All options", icon=":material/arrow_back:", type="tertiary", on_click=lambda: ss.update(plan_view=False))
+    ui.page_title(f"Option {chr(65 + sel)} · {md(entry['strategy']['label'])}",
+                  f"{summ['n_stops']} stops · {money(summ['total_cost'])} per person · fair group score "
+                  f"{summ['nsw'] * 100:.0f} / 100")
+    st.info(VERIFY_NOTE, icon="ℹ️")
     others = [compare_text(summ, s, ok[i]["strategy"]["label"]) for i, s in enumerate(summaries) if i != sel]
     if others:
         st.markdown("**How the other options differ from this one:**  \n" + "  \n".join(others))
@@ -712,15 +1032,15 @@ def plan_tab():
         plan_map(opt)
 
     wx = forecast(ss.trip["destination"], ss.trip["start_date"], int(ss.trip["num_days"]))
-    st.markdown("#### 🗓️ Day by day")
+    st.markdown("#### Day by day")
     for tab, day in zip(st.tabs([f"Day {d['day_number']}" for d in opt["days"]]), opt["days"]):
         with tab:
             render_day(day, wx)
 
     st.divider()
-    st.markdown("#### 🤔 Why this instead of that?")
+    st.markdown("#### Why this instead of that?")
     for t in opt["tradeoffs"]:
-        with st.container(border=True):
+        with ui.card():
             st.markdown(f"Picked **{md(t['chosen'])}** over **{md(t['alternative'])}**: {md(t['deciding_factor'])}  \n"
                         f"↪️ _What would change it:_ {md(t['counterfactual'])}")
     stops = [(d, s) for d in opt["days"] for s in d["stops"]]
@@ -739,14 +1059,14 @@ def plan_tab():
         verdict = {"keep_current": ":green-badge[current choice fits better]",
                    "alternative_is_comparable": ":orange-badge[close call]",
                    "alternative_is_better": ":red-badge[alternative may fit better: consider swapping]"}[c["verdict"]]
-        with st.container(border=True):
+        with ui.card():
             st.markdown(f"**{md(c['stop'])}** vs **{md(c['alt'])}** {verdict}  \n**Deciding factor:** {md(c['deciding_factor'])}")
             st.dataframe(pd.DataFrame(c["comparisons"]).rename(columns={"criterion": "Criterion", "chosen": c["stop"], "alternative": c["alt"]}),
                          hide_index=True, width="stretch")
             st.markdown(f"↪️ **What would change it:** {md(c['counterfactual'])}")
 
     st.divider()
-    st.markdown("#### 🧑‍✈️ You decide")
+    st.markdown("#### You decide")
     locked = [(d, s) for d in opt["days"] for s in d["stops"] if s.get("_locked") and not s["is_anchor"]]
     st.caption(f"{len(locked)} stop(s) locked · {len(ss.avoid)} removed or swapped out. Regenerating keeps your locks and "
                "must-visits and avoids what you removed.")
@@ -797,12 +1117,16 @@ def compact_day(day: dict):
 def replan_tab():
     ss = st.session_state
     entry = selected_entry()
-    st.subheader("⚡ Something changed? Re-plan on the go")
+    ui.page_title("Re-plan on the go", "Something changed during the trip? Describe it and Claude re-plans the rest of "
+                  "that day. Nothing changes until you accept.")
     if not entry:
-        st.info("Generate an itinerary on the Plan tab first.")
+        st.info("Generate itineraries first, then come back here to re-plan on the day.")
+        st.button("Go to itineraries", icon=":material/map:", on_click=go_nav, args=("Itineraries",))
         return
     opt = entry["option"]
-    st.caption(f"Working on: **{md(opt['title'])}**. Changes are only applied after you accept them.")
+    ok = [e for e in ss.options if e["option"]]
+    st.caption(f"Working on **Option {chr(65 + ok.index(entry))} · {md(entry['strategy']['label'])}**: "
+               f"{md(opt['title'])}. Open a different option on the Itineraries page to re-plan that one instead.")
     c1, c2 = st.columns([2, 1])
     di = c1.selectbox("Which day?", range(len(opt["days"])),
                       format_func=lambda i: f"Day {opt['days'][i]['day_number']} · {fmt_date(opt['days'][i]['date'])}: {opt['days'][i]['theme']}")
@@ -820,7 +1144,7 @@ def replan_tab():
 
     p = ss.pending_replan
     if p:
-        with st.container(border=True):
+        with ui.card():
             st.markdown(f"**Proposed changes** for “{md(p['event'])}”")
             for ch in p["changes"]:
                 st.markdown(f"- {md(ch)}")
@@ -840,7 +1164,7 @@ def replan_tab():
 
 def explore_tab():
     ss = st.session_state
-    st.subheader("🔍 Discover beyond the usual list")
+    ui.page_title("Explore", "Discover places beyond the usual list.")
     tags = st.pills("Tags", ["nature", "nightlife", "street food", "cafes", "culture", "shopping", "kid-friendly",
                              "rainy day", "free", "photo spots", "local markets"], selection_mode="multi", key="tags")
     if st.button("Find places", type="primary", disabled=not (tags and ss.trip["destination"])) and ai_ready():
@@ -858,7 +1182,7 @@ def explore_tab():
     st.caption("🟢 local hidden gem · 🔵 well-known · locations approximate")
     names = {a["name"].lower() for a in ss.anchors}
     for i, p in enumerate(ss.explore):
-        with st.container(border=True):
+        with ui.card():
             c1, c2 = st.columns([6, 1.3])
             c1.markdown(f"**{md(p['name'])}** · {md(p['area'])} {CROWD_BADGE[p['crowd_level']]}"
                         f"{' :green-badge[💎 local gem]' if p['hidden_gem'] else ''} :gray-badge[{money(p['est_cost_per_person'])}]  \n"
@@ -872,34 +1196,59 @@ def explore_tab():
 
 def privacy_tab():
     ss = st.session_state
-    st.subheader("🔒 What the AI sees: the trip, never the people")
-    st.markdown("Everything passes through a de-identification layer before it reaches Claude. Only an allowlist of "
-                "fields is sent, names become aliases, and personal identifiers are stripped. Below is the **live "
-                "preview** of the next request, built from what you've entered.")
-    payload, log = current_payload()
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**What you entered (stays in your session)**")
-        st.json({
-            "travellers": [{"name": t["name"], "dietary": t["dietary"], "mobility": t["mobility"]} for t in ss.travellers],
-            "trip_notes": ss.trip.get("notes", ""),
-            "must_visits": [{"name": a["name"], "note": a.get("note", ""), "link": a.get("source_url", "")} for a in ss.anchors],
-        }, expanded=True)
-    with c2:
-        st.markdown("**What Claude receives**")
-        st.json(payload, expanded=True)
-    st.markdown("**Applied protections**")
-    for item in log:
-        st.markdown(f"- ✅ {item}")
-    al = aliases(ss.travellers)
-    st.caption("Alias map, kept only on this device: " + ", ".join(f"{t['name']} → {al[t['id']]}" for t in ss.travellers))
-    if ss.last_sent:
-        with st.expander(f"Last itinerary request actually sent ({ss.last_sent['at']})"):
-            st.json(ss.last_sent["payload"])
+    ui.style(".stApp { background: #E6F0EA; }")  # this page sits on a green ground; its sections are white cards
+    with st.container(key="wf_hero"):
+        c1, c2 = st.columns([5, 1.3], vertical_alignment="center")
+        c1.markdown(
+            '<div class="wf-hero"><span class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" '
+            'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" '
+            'height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><h2>What the AI sees: the trip, never the '
+            'people</h2><p>Everything passes through a de-identification layer before it reaches Claude. Only an allowlist of '
+            'fields is sent, names become aliases, and personal identifiers are stripped. Below is the live preview of the '
+            'next request, built from what you\'ve entered.</p></div>', unsafe_allow_html=True)
+        c2.button("Clear all my data", key="clear_hero", icon=":material/delete:", on_click=clear_all, width="stretch")
 
-    st.divider()
-    st.subheader("📚 Data sources & limitations")
-    st.markdown(f"""
+    payload, log = current_payload()
+    with ui.card():
+        st.markdown("#### Live request preview")
+        c1, c2 = st.columns(2, gap="medium")
+        with c1:
+            st.markdown("**What you entered** · stays in your session")
+            st.json({
+                "travellers": [{"name": t["name"], "dietary": t["dietary"], "mobility": t["mobility"]} for t in ss.travellers],
+                "trip_notes": ss.trip.get("notes", ""),
+                "must_visits": [{"name": a["name"], "note": a.get("note", ""), "link": a.get("source_url", "")} for a in ss.anchors],
+            }, expanded=True)
+        with c2, st.container(key="wf_sent"):
+            st.markdown("**What Claude receives** · next request")
+            st.json(payload, expanded=True)
+
+    # Keyed so laptop CSS can stretch the left card to the height of the two cards on the right.
+    c1, c2 = st.container(key="priv_row").columns([1.5, 1], gap="medium")
+    with c1, ui.card():
+        st.markdown("#### Applied protections")
+        st.markdown('<ul class="wf-checks">' + "".join(f"<li>{html.escape(item[:1].upper() + item[1:])}</li>"
+                                                       for item in log) + "</ul>", unsafe_allow_html=True)
+    with c2:
+        al = aliases(ss.travellers)
+        with ui.card():
+            st.markdown("#### Alias map")
+            st.caption("Kept only on this device.")
+            st.markdown('<div class="wf-alias-grid">' + "".join(
+                f'<div><span>{html.escape(t["name"])}</span><b>→ {al[t["id"]]}</b></div>' for t in ss.travellers) + "</div>",
+                unsafe_allow_html=True)
+        with ui.card():
+            st.markdown("#### Last itinerary request actually sent")
+            if ss.last_sent:
+                st.caption(ss.last_sent["at"])
+                with st.expander("View the request"):
+                    st.json(ss.last_sent["payload"])
+            else:
+                st.caption("Nothing sent yet this session.")
+
+    with ui.card():
+        st.markdown("#### Data sources & limitations")
+        st.markdown(f"""
 | Information | Source | Limitation |
 |---|---|---|
 | Places, opening hours, prices, crowd levels | Claude ({MODEL}) general knowledge | Not live data and may be outdated. Each stop carries a confidence level. **Verify before booking.** |
@@ -908,8 +1257,9 @@ def privacy_tab():
 | Fairness & score breakdowns | Computed in this app from your settings | Depend on the AI's interest tags for each stop |
 | Transport times & costs | Claude estimate | Check live transit apps on the day |
 """)
-    st.subheader("📜 PDPA alignment")
-    st.markdown("""
+    with ui.card():
+        st.markdown("#### PDPA alignment")
+        st.markdown("""
 | Obligation | How this prototype handles it |
 |---|---|
 | Notification | A notice is shown before the first AI call |
@@ -919,13 +1269,14 @@ def privacy_tab():
 | Retention | Nothing is stored server-side. Session data is deleted when you close the tab or press *Clear all my data* |
 | Access & correction | Everything you entered and everything sent is visible on this page |
 """)
-    st.subheader("🧾 AI call log")
-    if ss.call_log:
-        st.dataframe(pd.DataFrame(ss.call_log), hide_index=True, width="stretch")
-    else:
-        st.caption("No AI calls yet this session.")
-    st.caption("Disclaimer: AI suggestions can be wrong. Routes or venues with little reliable information are flagged "
-               "with ⚠️. Use your own judgement for safety.")
+    with ui.card():
+        st.markdown("#### AI call log")
+        if ss.call_log:
+            st.dataframe(pd.DataFrame(ss.call_log), hide_index=True, width="stretch")
+        else:
+            st.caption("No AI calls yet this session.")
+        st.caption("Disclaimer: AI suggestions can be wrong. Routes or venues with little reliable information are flagged "
+                   "with ⚠️. Use your own judgement for safety.")
 
 
 # ---------------------------------------------------------------- main
@@ -945,25 +1296,26 @@ def gate():
 
 
 def main():
+    ui.inject_css()
+    ui.reset_cards()
     gate()
     init()
+    keep_widget_state()
     sidebar()
-    st.title(f"🧭 {APP_NAME}")
-    st.caption(TAGLINE)
-    tabs = st.tabs(["1 · Trip", "2 · Travellers", "3 · Must-visits & links", "🗺️ Plan", "⚡ Live re-plan", "🔍 Explore", "🔒 Privacy & data"])
-    with tabs[0]:
-        trip_tab()
-    with tabs[1]:
-        travellers_tab()
-    with tabs[2]:
-        anchors_tab()
-    with tabs[3]:
+    header()
+    bottom_nav()
+    page = st.session_state.nav
+    if page == "Plan trip":
+        plan_trip_page()
+    elif page == "Itineraries":
         plan_tab()
-    with tabs[4]:
+    elif page == "Re-plan":
         replan_tab()
-    with tabs[5]:
+    elif page == "Explore":
         explore_tab()
-    with tabs[6]:
+    elif page == "Settings":
+        settings_page()
+    else:
         privacy_tab()
 
 
