@@ -23,7 +23,7 @@ CSS = """
 
 /* Not applied to spans: Streamlit's Material icons are spans with their own icon font. */
 html, body, .stApp, .stApp p, .stApp label, .stApp li, .stApp h1, .stApp h2, .stApp h3, .stApp h4,
-.stApp button, .stApp input, .stApp textarea, .stApp select, .stApp [data-baseweb="tab"] {
+.stApp button, .stApp input, .stApp textarea, .stApp select, .stApp [data-baseweb="tab"], .stApp [role="tab"] {
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
 }
 [data-testid="stIconMaterial"], [data-testid="stIconMaterial"] * { font-family: 'Material Symbols Rounded' !important; }
@@ -42,17 +42,20 @@ h4 { font-size: 1rem !important; }
 a { color: var(--wf-green); }
 a:hover { color: var(--wf-green-dark); }
 
-/* ---- navigation tabs: step bar on laptop, bottom bar on phone ---- */
-[data-baseweb="tab-list"] { gap: 6px; padding: 6px; background: #fff; border: 1px solid var(--wf-line);
-  border-radius: 14px; overflow-x: auto; }
+/* ---- tabs (itinerary days) ----
+   Streamlit 1.66 dropped the data-baseweb hooks, so each rule also targets the ARIA roles both versions share. */
+[data-baseweb="tab-list"], [data-testid="stTabs"] [role="tablist"] { gap: 6px; padding: 6px; background: #fff;
+  border: 1px solid var(--wf-line); border-radius: 14px; overflow-x: auto; }
 [data-baseweb="tab-highlight"], [data-baseweb="tab-border"] { display: none !important; }
-button[data-baseweb="tab"] { height: 44px; padding: 0 16px; border-radius: 10px; color: #3F4F46; font-weight: 600;
-  background: transparent; white-space: nowrap; }
-button[data-baseweb="tab"]:hover { background: var(--wf-bg); color: var(--wf-ink); }
-button[data-baseweb="tab"][aria-selected="true"] { background: var(--wf-green); color: #fff; }
-button[data-baseweb="tab"][aria-selected="true"] p { color: #fff; font-weight: 700; }
-button[data-baseweb="tab"] p { font-size: 14px; }
-[data-baseweb="tab-panel"] { padding-top: 1.1rem; }
+button[data-baseweb="tab"], [data-testid="stTabs"] [role="tab"] { height: 44px; padding: 0 16px; border-radius: 10px;
+  color: #3F4F46; font-weight: 600; background: transparent; white-space: nowrap; }
+button[data-baseweb="tab"]:hover, [data-testid="stTabs"] [role="tab"]:hover { background: var(--wf-bg); color: var(--wf-ink); }
+button[data-baseweb="tab"][aria-selected="true"], [data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+  background: var(--wf-green); color: #fff; }
+button[data-baseweb="tab"][aria-selected="true"] p, [data-testid="stTabs"] [role="tab"][aria-selected="true"] p {
+  color: #fff; font-weight: 700; }
+button[data-baseweb="tab"] p, [data-testid="stTabs"] [role="tab"] p { font-size: 14px; }
+[data-baseweb="tab-panel"], [data-testid="stTabs"] [role="tabpanel"] { padding-top: 1.1rem; }
 
 /* ---- cards: containers made with ui.card() ---- */
 [class*="st-key-wfcard_"] { background: #fff; border: 1px solid var(--wf-line) !important; border-radius: 16px !important;
@@ -80,6 +83,22 @@ button[data-baseweb="tab"] p { font-size: 14px; }
 [data-testid="stNumberInputContainer"] [data-baseweb="input"] { border: 0 !important; }
 [data-testid="stNumberInputContainer"]:focus-within { border-color: var(--wf-green); }
 [data-baseweb="input"]:focus-within, [data-baseweb="textarea"]:focus-within { border-color: var(--wf-green) !important; }
+/* the same fields in Streamlit 1.66+, which has no data-baseweb hooks; :not(:has()) keeps these off older versions */
+[data-testid="stTextInputRootElement"], [data-testid="stTextAreaRootElement"],
+[data-testid="stSelectbox"]:not(:has([data-baseweb])) [role="group"],
+[data-testid="stDateInput"]:not(:has([data-baseweb])) [data-testid="stDateInputField"],
+[data-testid="stTimeInput"]:not(:has([data-baseweb])) [data-testid="stTimeInputTimeDisplay"] {
+  border: 1px solid var(--wf-field) !important; border-radius: 10px !important; background: #fff !important; }
+[data-testid="stTextInputRootElement"], [data-testid="stSelectbox"]:not(:has([data-baseweb])) [role="group"],
+[data-testid="stDateInput"]:not(:has([data-baseweb])) [data-testid="stDateInputField"],
+[data-testid="stTimeInput"]:not(:has([data-baseweb])) [data-testid="stTimeInputTimeDisplay"] { min-height: 44px; }
+[data-testid="stTextInputRootElement"]:focus-within, [data-testid="stTextAreaRootElement"]:focus-within,
+[data-testid="stSelectbox"]:not(:has([data-baseweb])) [role="group"]:focus-within,
+[data-testid="stDateInput"]:not(:has([data-baseweb])) [data-testid="stDateInputField"]:focus-within,
+[data-testid="stTimeInput"]:not(:has([data-baseweb])) [data-testid="stTimeInputTimeDisplay"]:focus-within {
+  border-color: var(--wf-green) !important; }
+[data-testid="stTextInputRootElement"] input, [data-testid="stTextAreaRootElement"] textarea,
+[data-testid="stNumberInputField"], [data-testid="stSelectbox"] input { font-size: 15px; }
 [data-testid="stSlider"] [role="slider"] { background: var(--wf-green); }
 [data-testid="stCaptionContainer"], .stCaption { color: var(--wf-muted); }
 
@@ -131,7 +150,7 @@ button[data-baseweb="tab"] p { font-size: 14px; }
 /* phone-only pieces: the bottom tab bar, and the traveller buttons under the share bar */
 .st-key-bottomnav, .st-key-share_btns { display: none !important; }
 /* "Settings" is the phone tab bar's page; laptops don't list it */
-[data-testid="stSidebar"] [role="radiogroup"] > label:last-child { display: none; }
+[data-testid="stSidebar"] [role="radiogroup"] > :last-child { display: none; }
 .wf-tag-fixed .ph { display: none; }
 .wf-loaded-wrap { text-align: right; }
 /* the fold arrow on traveller cards is a phone-only control */
@@ -202,11 +221,21 @@ button[data-baseweb="tab"] p { font-size: 14px; }
 [data-testid="stSidebar"] [role="radiogroup"] { width: 100% !important; }
 [data-testid="stSidebar"] [data-testid="stRadio"] label [data-testid="stMarkdownContainer"] p { display: flex; align-items: center; gap: 10px; }
 [data-testid="stSidebar"] [data-testid="stRadio"] label [data-testid="stIconMaterial"] { font-size: 20px; }
+/* hide the radio circle: a label's first div up to 1.58, the first div of the label's inner wrapper from 1.66 */
 [data-testid="stSidebar"] [data-testid="stRadio"] label > div:first-child,
-.st-key-stepbar [data-testid="stRadio"] label > div:first-child { display: none; }
+.st-key-stepbar [data-testid="stRadio"] label > div:first-child,
+[data-testid="stSidebar"] [data-testid="stRadioOption"] > div > div:first-child,
+.st-key-stepbar [data-testid="stRadioOption"] > div > div:first-child { display: none; }
+[data-testid="stSidebar"] [data-testid="stRadioOption"], .st-key-stepbar [data-testid="stRadioOption"] {
+  display: flex; flex-direction: row; }
+[data-testid="stSidebar"] [data-testid="stRadioOption"] > div, .st-key-stepbar [data-testid="stRadioOption"] > div {
+  display: flex; align-items: center; min-width: 0; }
+[data-testid="stSidebar"] [role="radiogroup"] > div, .st-key-stepbar [role="radiogroup"] > div { width: 100%; }
 [data-testid="stSidebar"] [data-testid="stRadio"] label:hover { background: var(--wf-bg); }
-[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) { background: var(--wf-tint); }
-[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) p { color: var(--wf-green-dark); font-weight: 700; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked),
+[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"] { background: var(--wf-tint); }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) p,
+[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"] p { color: var(--wf-green-dark); font-weight: 700; }
 [data-testid="stSidebar"] [data-testid="stRadio"] label p { font-size: 15px; font-weight: 500; color: #3F4F46; }
 [data-testid="stSidebarUserContent"] { padding-top: .25rem; }
 [data-testid="stSidebarHeader"] { height: auto; padding-top: .5rem; padding-bottom: 0; }
@@ -214,28 +243,33 @@ button[data-baseweb="tab"] p { font-size: 14px; }
 /* ---- step bar ---- */
 .st-key-stepbar { background: #fff; border: 1px solid var(--wf-line); border-radius: 14px; padding: 6px; }
 .st-key-stepbar [role="radiogroup"] { display: flex !important; flex-wrap: nowrap; gap: 6px; width: 100%; }
-.st-key-stepbar [role="radiogroup"] > label { flex: 1 1 0 !important; min-width: 0; }
+.st-key-stepbar [role="radiogroup"] > * { flex: 1 1 0 !important; min-width: 0; }
 .st-key-stepbar [data-testid="stRadio"], .st-key-stepbar [data-testid="stRadio"] > div { width: 100% !important; }
 .st-key-stepbar [data-testid="stRadio"] label { height: 60px; padding: 0 16px; justify-content: flex-start; gap: 12px;
   width: 100% !important; max-width: none !important; }
 .st-key-stepbar [data-testid="stRadio"] label:hover { background: var(--wf-bg); }
-.st-key-stepbar [data-testid="stRadio"] label:has(input:checked) { background: var(--wf-green); }
+.st-key-stepbar [data-testid="stRadio"] label:has(input:checked),
+.st-key-stepbar [data-testid="stRadioOption"][data-selected="true"] { background: var(--wf-green); }
 .st-key-stepbar [data-testid="stRadio"] label p { font-size: 15px; font-weight: 700; text-align: left; line-height: 1.25; color: var(--wf-ink); }
 .st-key-stepbar [data-testid="stRadio"] label p::after { display: block; font-size: 12.5px; font-weight: 500; color: var(--wf-muted);
   margin-top: 2px; }
 .st-key-stepbar [data-testid="stRadio"] label::before { width: 28px; height: 28px; border-radius: 14px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800;
   background: var(--wf-tint); color: var(--wf-green-dark); }
-.st-key-stepbar [data-testid="stRadio"] label:has(input:checked) p { color: #fff; }
-.st-key-stepbar [data-testid="stRadio"] label:has(input:checked) p::after { color: rgba(255, 255, 255, .85); }
-.st-key-stepbar [data-testid="stRadio"] label:has(input:checked)::before { background: #fff; color: var(--wf-green); }
+.st-key-stepbar [data-testid="stRadio"] label:has(input:checked) p,
+.st-key-stepbar [data-testid="stRadioOption"][data-selected="true"] p { color: #fff; }
+.st-key-stepbar [data-testid="stRadio"] label:has(input:checked) p::after,
+.st-key-stepbar [data-testid="stRadioOption"][data-selected="true"] p::after { color: rgba(255, 255, 255, .85); }
+.st-key-stepbar [data-testid="stRadio"] label:has(input:checked)::before,
+.st-key-stepbar [data-testid="stRadioOption"][data-selected="true"]::before { background: #fff; color: var(--wf-green); }
 
 /* ---- must-visits ---- */
 .wf-box-title { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 800; margin: 0; }
 .wf-hint { font-size: 12.5px; color: var(--wf-muted); line-height: 1.45; margin-top: -12px; }
 .wf-hint b { color: var(--wf-ink); }
 [class*="st-key-fixedbox"] { background: var(--wf-bg); border-radius: 12px; padding: 14px; margin-top: 8px; }
-[class*="st-key-fixedbox"] [data-baseweb="input"], [class*="st-key-fixedbox"] [data-baseweb="select"] > div { background: #fff !important; }
+[class*="st-key-fixedbox"] [data-baseweb="input"], [class*="st-key-fixedbox"] [data-baseweb="select"] > div,
+[class*="st-key-fixedbox"] [data-testid="stNumberInputContainer"] { background: #fff !important; }
 .wf-src { display: flex; gap: 6px; margin: 4px 0 8px; }
 .wf-src span { font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 7px; background: #F0F3F1; color: #3F4F46; }
 .wf-src span.on { background: var(--wf-green); color: #fff; font-weight: 700; }
@@ -318,7 +352,8 @@ button[data-baseweb="tab"] p { font-size: 14px; }
 /* transport options as selectable cards */
 .st-key-transport [data-testid="stCheckbox"] { width: 100%; border: 1px solid var(--wf-field); border-radius: 12px; height: 52px;
   padding: 0 16px; display: flex; align-items: center; background: #fff; }
-.st-key-transport [data-testid="stCheckbox"]:has(input:checked) { border: 1.5px solid var(--wf-green); background: var(--wf-tint); }
+.st-key-transport [data-testid="stCheckbox"]:has(input:checked),
+.st-key-transport [data-testid="stCheckbox"][data-selected="true"] { border: 1.5px solid var(--wf-green); background: var(--wf-tint); }
 .st-key-transport [data-testid="stCheckbox"] p { font-weight: 600; }
 
 /* ---- laptop only ---- */
@@ -373,8 +408,12 @@ button[data-baseweb="tab"] p { font-size: 14px; }
   /* trip details: compact, fields paired two-up like the phone mockup */
   [class*="st-key-wfcard_"] { padding: 18px 16px 24px !important; }
   [class*="st-key-wfcard_"] h2 { font-size: 22px !important; }
-  [data-baseweb="input"], [data-baseweb="select"] > div { min-height: 40px; }
-  [data-baseweb="select"] > div *, [data-baseweb="input"] input { font-size: 14px !important; }
+  [data-baseweb="input"], [data-baseweb="select"] > div, [data-testid="stTextInputRootElement"],
+  [data-testid="stSelectbox"]:not(:has([data-baseweb])) [role="group"],
+  [data-testid="stDateInput"]:not(:has([data-baseweb])) [data-testid="stDateInputField"],
+  [data-testid="stTimeInput"]:not(:has([data-baseweb])) [data-testid="stTimeInputTimeDisplay"] { min-height: 40px; }
+  [data-baseweb="select"] > div *, [data-baseweb="input"] input, [data-testid="stTextInputRootElement"] input,
+  [data-testid="stNumberInputField"], [data-testid="stSelectbox"] input { font-size: 14px !important; }
   [data-testid="stWidgetLabel"] p { font-size: 12.5px; }
   .wf-loaded-wrap { text-align: left; }
   [class*="st-key-trow_"] [data-testid="stHorizontalBlock"], .st-key-transport [data-testid="stHorizontalBlock"] {
@@ -450,13 +489,16 @@ def stepbar_css(subtitles: list[str], current: int) -> None:
     """Number or tick circle and a subtitle under each step label; radio labels can only hold one line of text."""
     rules = []
     for n, sub in enumerate(subtitles, 1):
-        sel = f'.st-key-stepbar [role="radiogroup"] > label:nth-child({n})'
+        # the option's label is the radiogroup's child up to Streamlit 1.58, and sits inside a wrapper div from 1.66
+        sels = [f'.st-key-stepbar [role="radiogroup"] > label:nth-child({n})',
+                f'.st-key-stepbar [role="radiogroup"] > div:nth-child({n}) > label']
         sub = re.sub(r'[\\"<>\n]', "", sub)
-        rules.append(f'{sel} p::after {{ content: "{sub}"; }}')
+        rules.append(", ".join(f"{s} p::after" for s in sels) + f' {{ content: "{sub}"; }}')
+        before = ", ".join(f"{s}::before" for s in sels)
         if n - 1 < current:
-            rules.append(f"{sel}::before {{ content: ''; background: var(--wf-green) {CHECK_SVG} center / 16px no-repeat; }}")
+            rules.append(f"{before} {{ content: ''; background: var(--wf-green) {CHECK_SVG} center / 16px no-repeat; }}")
         else:
-            rules.append(f'{sel}::before {{ content: "{n}"; }}')
+            rules.append(f'{before} {{ content: "{n}"; }}')
     style(" ".join(rules))
 
 
