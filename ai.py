@@ -10,7 +10,7 @@ import anthropic
 import streamlit as st
 
 import schemas
-from config import FALLBACK_BETA, MODEL
+from config import EFFORT, FALLBACK_BETA, MODEL
 
 
 class AIError(Exception):
@@ -69,7 +69,7 @@ closed venues). Do not invent precise facts you are unsure of; prefer well-estab
 Coordinates are approximate. Keep descriptions short."""
 
 
-def _parse(output_format, user: str, effort: str, max_tokens: int = 20000, c: anthropic.Anthropic | None = None):
+def _parse(output_format, user: str, max_tokens: int = 20000, c: anthropic.Anthropic | None = None):
     c = c or client()
     kwargs = dict(
         model=MODEL,
@@ -77,7 +77,7 @@ def _parse(output_format, user: str, effort: str, max_tokens: int = 20000, c: an
         system=SYSTEM,
         messages=[{"role": "user", "content": user}],
         output_format=output_format,
-        output_config={"effort": effort},
+        output_config={"effort": EFFORT},
     )
     t0 = time.time()
     try:
@@ -115,7 +115,7 @@ def _j(obj) -> str:
     return json.dumps(obj, indent=1, ensure_ascii=False)
 
 
-def generate_options(payload: dict, weather: dict, strategies: list[dict], effort: str):
+def generate_options(payload: dict, weather: dict, strategies: list[dict]):
     """Generate one itinerary per strategy, in parallel. Returns list of (strategy, option_dict | error_str, meta)."""
     c = client()  # resolve in the main thread; worker threads have no Streamlit context
     weather_txt = _j(weather["days"]) if weather["days"] else "No forecast available."
@@ -128,7 +128,7 @@ def generate_options(payload: dict, weather: dict, strategies: list[dict], effor
             f"Plan every date in the request. Give the itinerary a short, descriptive title."
         )
         try:
-            opt, meta = _parse(schemas.ItineraryOption, user, effort, c=c)
+            opt, meta = _parse(schemas.ItineraryOption, user, c=c)
             return strategy, opt.model_dump(), meta
         except AIError as e:
             return strategy, str(e), None
@@ -144,7 +144,7 @@ def extract_link(url: str, caption: str, destination: str):
         "If it is ambiguous, set found=false or confidence='low' and explain in notes.\n\n"
         f"Trip destination: {destination}\nURL: {url or '(none)'}\nCaption / description: {caption or '(none)'}"
     )
-    return _parse(schemas.ExtractedPlace, user, "low", 4000)
+    return _parse(schemas.ExtractedPlace, user, 4000)
 
 
 def swap_alternatives(payload: dict, day: dict, stop: dict):
@@ -154,7 +154,7 @@ def swap_alternatives(payload: dict, day: dict, stop: dict):
         "alternatives that fit the same time slot and route, are not already in the day, and serve the group. "
         "Each alternative's transport_to_next should reach the stop that currently follows it."
     )
-    return _parse(schemas.SwapResult, user, "low", 12000)
+    return _parse(schemas.SwapResult, user, 12000)
 
 
 def explain_contrast(payload: dict, day: dict, stop: dict, alternative: str):
@@ -164,7 +164,7 @@ def explain_contrast(payload: dict, day: dict, stop: dict, alternative: str):
         "(time slot fit, travel time, cost vs budget, group interests, crowds, weather, accessibility). Name the "
         "single deciding factor, and a concrete counterfactual: what setting change would make the alternative win."
     )
-    return _parse(schemas.ContrastiveExplanation, user, "low", 6000)
+    return _parse(schemas.ContrastiveExplanation, user, 6000)
 
 
 def replan_day(payload: dict, weather: dict, day: dict, event: str, now_time: str):
@@ -175,7 +175,7 @@ def replan_day(payload: dict, weather: dict, day: dict, event: str, now_time: st
         "Re-plan this day from that time onwards. Keep stops before that time unchanged, keep FIXED must-visits, "
         "change as little as needed, and list each change in change_summary."
     )
-    return _parse(schemas.ReplanResult, user, "low", 16000)
+    return _parse(schemas.ReplanResult, user, 16000)
 
 
 def explore(destination: str, tags: list[str], payload: dict):
@@ -186,4 +186,4 @@ def explore(destination: str, tags: list[str], payload: dict):
         "List 8 places matching these tags. At least half should be lesser-known local spots (hidden_gem=true) "
         "rather than the most famous attractions."
     )
-    return _parse(schemas.ExploreResult, user, "low", 8000)
+    return _parse(schemas.ExploreResult, user, 8000)

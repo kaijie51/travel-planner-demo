@@ -4,6 +4,7 @@ APP_NAME = "Wayfare"  # placeholder product name
 TAGLINE = "AI group itinerary planner: fair, transparent, and you stay in control"
 
 MODEL = "claude-sonnet-5-5"
+EFFORT = "low"  # every Claude call; keeps responses fast for live demos
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 INTERESTS = ["nature", "culture", "food", "shopping", "nightlife", "adventure", "relaxation"]

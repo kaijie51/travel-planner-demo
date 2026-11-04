@@ -122,7 +122,6 @@ def init():
     ss.update(demo_state())  # Singapore sample is preloaded
     ss.call_log, ss.last_sent = [], None
     ss.consent_ai, ss.consent_personal = False, True
-    ss.effort = "low"
     ss.nav, ss.step, ss.loaded = NAV[0], STEPS[0], "Local Singapore demo"
     reset_plan_state()
     load_demo_plan()
@@ -223,7 +222,7 @@ def go_step(i: int):
 def keep_widget_state():
     """Widgets that only render on some pages would lose their value when hidden; re-assigning keeps it."""
     ss = st.session_state
-    for k in ("consent_ai", "consent_personal", "effort", "step", "sel_radio"):
+    for k in ("consent_ai", "consent_personal", "step", "sel_radio"):
         if k in ss:
             ss[k] = ss[k]
 
@@ -285,7 +284,7 @@ def quick_start(prefix: str = ""):
         st.button("Blank trip", key=prefix + "blank", on_click=clear_all, width="stretch")
 
 
-SETTINGS = ("consent_ai", "consent_personal", "effort")
+SETTINGS = ("consent_ai", "consent_personal")
 
 
 def copy_setting(src: str, dst: str):
@@ -308,8 +307,6 @@ def planner_settings(prefix: str = ""):
         st.toggle("Personalisation", **kw("consent_personal"))
         st.caption("Send interest profiles under aliases. Off = generic plan.")
         st.divider()
-        st.select_slider("Reasoning effort", ["low", "medium", "high"], **kw("effort"),
-                         help="Higher = more careful plans but slower. 'low' keeps live demos snappy.")
         st.caption(f"Model: `{MODEL}` · " + ("API key found" if ai.get_api_key() else "no API key"))
         st.button("Clear all my data", key=prefix + "clear", icon=":material/delete:", on_click=clear_all,
                   width="stretch", help="Deletes everything in this session. Nothing is stored server-side.")
@@ -880,7 +877,7 @@ def generate(strategies: list[dict], extra_anchors=None, extra_notes="", replace
         st.write("🔒 De-identified trip data prepared (see *Privacy & data* tab)")
         st.write(f"🌦️ {wx['source'] if wx['days'] else wx['note']}")
         st.write("🧠 Claude is drafting: " + ", ".join(s["label"] for s in strategies))
-        results = ai.generate_options(payload, wx, strategies, ss.effort)
+        results = ai.generate_options(payload, wx, strategies)
         secs = (datetime.now() - t0).seconds
         n_ok = sum(1 for _, o, _ in results if isinstance(o, dict))
         status.update(label=f"Itinerary ready in {secs}s" if n_ok else "Couldn't create the itinerary",
