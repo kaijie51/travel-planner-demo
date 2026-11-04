@@ -190,3 +190,27 @@ def demo_option(start: date) -> dict:
                                "vegetarian and pork-free choices, and each day stays within the group's pace."),
         "warnings": [],
     }
+
+
+# Prefilled answer for "Why this instead of that?", in the shape of schemas.ContrastiveExplanation.
+DEMO_CONTRAST = {
+    "stop": "Gardens by the Bay: Cloud Forest & Garden Rhapsody",
+    "alt": "Sentosa",
+    "deciding_factor": "It serves the group's nature, relaxation and culture interests together while staying within the 'prefer quiet' crowd setting.",
+    "comparisons": [
+        {"criterion": "Time slot fit", "chosen": "Fits 17:15–20:00 and ends with the free 19:45 light show",
+         "alternative": "Best as a full day; an evening visit misses most attractions"},
+        {"criterion": "Travel time", "chosen": "15 min by MRT from the hotel, 10 min walk to dinner",
+         "alternative": "35–45 min each way via HarbourFront"},
+        {"criterion": "Cost vs budget", "chosen": "About SGD 32 pp; the light show is free",
+         "alternative": "SGD 60–100 pp for a typical mix of attractions"},
+        {"criterion": "Group interests", "chosen": "Strong on nature and relaxation, with culture and some shopping",
+         "alternative": "Strong on adventure and beaches, weaker on culture"},
+        {"criterion": "Crowds", "chosen": "Moderate on a weekday evening", "alternative": "High, especially at attractions"},
+        {"criterion": "Weather", "chosen": "Cloud Forest is indoors if it rains", "alternative": "Mostly outdoor"},
+        {"criterion": "Accessibility", "chosen": "Step-free paths and lifts throughout",
+         "alternative": "Accessible, but long distances between attractions"},
+    ],
+    "counterfactual": "Raising the group's adventure interest and crowd tolerance to 4, with a bigger budget, would make Sentosa the better fit.",
+    "verdict": "keep_current",
+}

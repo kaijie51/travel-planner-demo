@@ -9,7 +9,6 @@ import json
 import uuid
 from datetime import date, datetime, time, timedelta
 
-import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
@@ -20,7 +19,7 @@ from ai import AIError
 from config import (APP_NAME, CROWD_LABELS, INTEREST_LABELS, INTERESTS, MODEL, PACE_LABELS,
                     STRATEGIES, TAGLINE, TRANSPORT_ICONS, TRANSPORT_MODES)
 from demo import DEMO_LINK, demo_state
-from demo_plan import demo_option
+from demo_plan import DEMO_CONTRAST, demo_option
 from privacy import aliases, build_payload, clean_url, normalised_weights, scrub
 from weather import forecast
 
@@ -49,6 +48,15 @@ def uid() -> str:
 def md(text: str) -> str:
     """Escape '$' so prices like S$10 aren't rendered as LaTeX."""
     return (text or "").replace("$", "\\$")
+
+
+def md_table(headers: list[str], rows: list) -> str:
+    """Markdown table. Used instead of st.dataframe, whose lazily loaded frontend file Streamlit Cloud sometimes fails to serve."""
+    def cell(v) -> str:
+        return md(str(v)).replace("|", "\\|").replace("\n", " ")
+    lines = ["| " + " | ".join(cell(h) for h in headers) + " |", "|" + "---|" * len(headers)]
+    lines += ["| " + " | ".join(cell(v) for v in r) + " |" for r in rows]
+    return "\n".join(lines)
 
 
 def to_time(s: str) -> time:
@@ -130,6 +138,7 @@ def load_demo_plan():
     ss = st.session_state
     option = prepare_option(demo_option(ss.trip["start_date"]))
     ss.options = [{"strategy": STRATEGIES[0], "option": option, "error": None}]
+    ss.contrast = copy.deepcopy(DEMO_CONTRAST)
 
 
 def clear_all():
@@ -778,13 +787,10 @@ def fairness_panel(option: dict, summary: dict):
     c3.metric("Evenness (Jain)", f"{summary['jain']:.2f}", help="1.00 = perfectly even. On its own it can't tell 'everyone happy' from 'everyone unhappy', so it's shown alongside the fair score.")
     show = st.toggle("Show per-traveller match (visible to the whole group)", True, key="show_individual")
     if show:
-        df = pd.DataFrame({
-            "Traveller": [t["name"] for t in ss.travellers],
-            "Weight": [f"{w * 100:.0f}%" for w in summary["weights"]],
-            "Preference match": [s * 100 for s in summary["satisfaction"]],
-        })
-        st.dataframe(df, hide_index=True, width="stretch", column_config={
-            "Preference match": st.column_config.ProgressColumn(format="%.0f", min_value=0, max_value=100)})
+        st.markdown("".join(ui.bar_row(f"{html.escape(t['name'])} · {w * 100:.0f}%", s * 100)
+                            for t, w, s in zip(ss.travellers, summary["weights"], summary["satisfaction"])),
+                    unsafe_allow_html=True)
+        st.caption("Preference match per traveller (name · influence weight).")
     st.caption(md(option["group_balance_note"]))
     with st.expander("How are these scores calculated?"):
         st.markdown(
@@ -831,7 +837,7 @@ def render_stop(day: dict, si: int, stop: dict, prev_leg: dict | None):
                       disabled=stop["is_anchor"])
         with st.expander("Why this stop? Score breakdown & sources"):
             rows = scoring.stop_breakdown(stop, prev_leg, ss.travellers, dict(ss.trip, dates=trip_dates(ss.trip)))
-            st.dataframe(pd.DataFrame(rows, columns=["Criterion", "Value"]), hide_index=True, width="stretch")
+            st.markdown(md_table(["Criterion", "Value"], rows))
             st.markdown(f"**Booking:** {md(stop['booking_info'])}  \n**Info confidence:** {stop['info_confidence']}")
             st.caption(f"Source: Claude general knowledge (not live data). {VERIFY_NOTE}")
         if u in ss.swaps:
@@ -1046,9 +1052,11 @@ def plan_detail(ok: list[dict]):
                         f"↪️ _What would change it:_ {md(t['counterfactual'])}")
     stops = [(d, s) for d in opt["days"] for s in d["stops"]]
     c1, c2, c3 = st.columns([2, 2, 1])
-    pick = c1.selectbox("Ask about a stop", range(len(stops)),
+    # Start on the question already answered (e.g. the demo plan's prefilled one).
+    asked = next((i for i, (_, s) in enumerate(stops) if ss.contrast and s["name"] == ss.contrast["stop"]), 0)
+    pick = c1.selectbox("Ask about a stop", range(len(stops)), asked,
                         format_func=lambda i: f"Day {stops[i][0]['day_number']} · {stops[i][1]['name']}")
-    alt = c2.text_input("…instead of", placeholder="e.g. Sentosa")
+    alt = c2.text_input("…instead of", ss.contrast["alt"] if ss.contrast else "", placeholder="e.g. Sentosa")
     c3.write("")
     if c3.button("Ask", width="stretch", disabled=not alt.strip()) and ai_ready():
         d, s = stops[pick]
@@ -1062,8 +1070,8 @@ def plan_detail(ok: list[dict]):
                    "alternative_is_better": ":red-badge[alternative may fit better: consider swapping]"}[c["verdict"]]
         with ui.card():
             st.markdown(f"**{md(c['stop'])}** vs **{md(c['alt'])}** {verdict}  \n**Deciding factor:** {md(c['deciding_factor'])}")
-            st.dataframe(pd.DataFrame(c["comparisons"]).rename(columns={"criterion": "Criterion", "chosen": c["stop"], "alternative": c["alt"]}),
-                         hide_index=True, width="stretch")
+            st.markdown(md_table(["Criterion", c["stop"], c["alt"]],
+                                 [(x["criterion"], x["chosen"], x["alternative"]) for x in c["comparisons"]]))
             st.markdown(f"↪️ **What would change it:** {md(c['counterfactual'])}")
 
     st.divider()
@@ -1273,7 +1281,9 @@ def privacy_tab():
     with ui.card():
         st.markdown("#### AI call log")
         if ss.call_log:
-            st.dataframe(pd.DataFrame(ss.call_log), hide_index=True, width="stretch")
+            cols = list(ss.call_log[0])
+            st.markdown(md_table([c.replace("_", " ").capitalize() for c in cols],
+                                 [[row.get(c, "") for c in cols] for row in ss.call_log]))
         else:
             st.caption("No AI calls yet this session.")
         st.caption("Disclaimer: AI suggestions can be wrong. Routes or venues with little reliable information are flagged "
