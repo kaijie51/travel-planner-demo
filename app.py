@@ -19,7 +19,8 @@ import ui
 from ai import AIError
 from config import (APP_NAME, CROWD_LABELS, INTEREST_LABELS, INTERESTS, MODEL, PACE_LABELS,
                     STRATEGIES, TAGLINE, TRANSPORT_ICONS, TRANSPORT_MODES)
-from demo import DEMO_LINK, DEMO_SCRIPT, demo_state
+from demo import DEMO_LINK, demo_state
+from demo_plan import demo_option
 from privacy import aliases, build_payload, clean_url, normalised_weights, scrub
 from weather import forecast
 
@@ -111,8 +112,9 @@ def init():
     ss.call_log, ss.last_sent = [], None
     ss.consent_ai, ss.consent_personal = False, True
     ss.n_options, ss.effort = 3, "low"
-    ss.nav, ss.step, ss.loaded, ss.show_script = NAV[0], STEPS[0], "Local Singapore demo", False
+    ss.nav, ss.step, ss.loaded = NAV[0], STEPS[0], "Local Singapore demo"
     reset_plan_state()
+    load_demo_plan()
 
 
 def load_demo():
@@ -120,6 +122,14 @@ def load_demo():
     st.session_state.ver += 1
     st.session_state.loaded = "Local Singapore demo"
     reset_plan_state()
+    load_demo_plan()
+
+
+def load_demo_plan():
+    """Show the ready-made Singapore itinerary, so the demo has a plan without calling the API."""
+    ss = st.session_state
+    option = prepare_option(demo_option(ss.trip["start_date"]))
+    ss.options = [{"strategy": STRATEGIES[0], "option": option, "error": None}]
 
 
 def clear_all():
@@ -201,7 +211,7 @@ def go_step(i: int):
 def keep_widget_state():
     """Widgets that only render on some pages would lose their value when hidden; re-assigning keeps it."""
     ss = st.session_state
-    for k in ("consent_ai", "consent_personal", "n_options", "effort", "show_script", "step", "sel_radio"):
+    for k in ("consent_ai", "consent_personal", "n_options", "effort", "step", "sel_radio"):
         if k in ss:
             ss[k] = ss[k]
 
@@ -212,10 +222,6 @@ def sidebar():
         # "Settings" is the phone tab bar's page; CSS hides its entry here (the last option).
         st.radio("Main navigation", NAV + ["Settings"], key="nav", label_visibility="collapsed", width="stretch",
                  format_func=lambda n: f":material/{NAV_ICONS[n]}: {n}")
-        st.divider()
-        st.toggle("Presenter script", key="show_script", help="Show or hide the demo talking points.")
-        if st.session_state.show_script:
-            st.markdown(DEMO_SCRIPT)
 
 
 BOTTOM_NAV = [("Plan trip", "Plan", "luggage"), ("Itineraries", "Itineraries", "map"), ("Re-plan", "Re-plan", "bolt"),
@@ -233,16 +239,11 @@ def bottom_nav():
 
 
 def settings_page():
-    """The phone's Settings tab: the laptop's right-hand panels plus the presenter script."""
+    """The phone's Settings tab: the laptop's right-hand panels."""
     ui.page_title("Settings", "Demo data, planner options and privacy.")
     quick_start("sb_")
     planner_settings("sb_")
     privacy_note("sb_")
-    with ui.card():
-        st.session_state.sb_show_script = st.session_state.show_script
-        st.toggle("Presenter script", key="sb_show_script", on_change=copy_setting, args=("sb_show_script", "show_script"))
-        if st.session_state.show_script:
-            st.markdown(DEMO_SCRIPT)
 
 
 def header():

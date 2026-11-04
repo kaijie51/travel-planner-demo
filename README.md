@@ -53,7 +53,7 @@ py -m streamlit run app.py
 
 ## Demo tips
 
-- The Singapore group trip is preloaded, and **Load Singapore demo** in the sidebar resets it. The presenter script is in the sidebar expander.
+- The Singapore group trip is preloaded with a ready-made itinerary (no API call needed), and **Local Singapore demo** in Quick start resets both. Clicking **Generate** replaces it with fresh AI plans.
 - Turn on **AI generation** in the sidebar just before you present, or click the consent button when it appears. Showing that notice is part of the PDPA story.
 - With reasoning effort set to "low", generating 3 options in parallel usually takes about 30–90 s. Use 2 options or fewer days if it needs to be faster.
 - Generate one plan before you go on stage. The plan stays in the browser session, so you can present from it even if the Wi-Fi drops.
@@ -68,5 +68,6 @@ py -m streamlit run app.py
 | `privacy.py` | De-identification layer: allowlist, aliases, scrubbing, group-level needs |
 | `scoring.py` | Deterministic fairness metrics, costs, pace checks, score breakdowns |
 | `weather.py` | Open-Meteo geocoding + forecast |
-| `demo.py` | Singapore preset + presenter script |
+| `demo.py` | Singapore preset |
+| `demo_plan.py` | Ready-made Singapore itinerary shown before anything is generated |
 | `config.py` | Name, model, interests, strategies |
