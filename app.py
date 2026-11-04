@@ -50,6 +50,10 @@ def md(text: str) -> str:
     return (text or "").replace("$", "\\$")
 
 
+def plural(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
 def md_table(headers: list[str], rows: list) -> str:
     """Markdown table. Used instead of st.dataframe, whose lazily loaded frontend file Streamlit Cloud sometimes fails to serve."""
     def cell(v) -> str:
@@ -137,7 +141,7 @@ def load_demo_plan():
     """Show the ready-made Singapore itinerary, so the demo has a plan without calling the API."""
     ss = st.session_state
     option = prepare_option(demo_option(ss.trip["start_date"]))
-    ss.options = [{"strategy": STRATEGIES[0], "option": option, "error": None}]
+    ss.options = [{"strategy": STRATEGIES[0], "option": option, "error": None, "sample": True}]
     ss.contrast = copy.deepcopy(DEMO_CONTRAST)
 
 
@@ -895,14 +899,14 @@ def generate(strategies: list[dict], extra_anchors=None, extra_notes="", replace
     ss.last_sent = {"payload": payload, "log": log, "at": datetime.now().strftime("%d %b %Y %H:%M:%S")}
     wx = forecast(ss.trip["destination"], ss.trip["start_date"], int(ss.trip["num_days"]))
     t0 = datetime.now()
-    with st.status(f"Planning {len(strategies)} itinerary option(s) in parallel…", expanded=True) as status:
+    with st.status(f"Planning {plural(len(strategies), 'itinerary option')}…", expanded=True) as status:
         st.write("🔒 De-identified trip data prepared (see *Privacy & data* tab)")
         st.write(f"🌦️ {wx['source'] if wx['days'] else wx['note']}")
         st.write("🧠 Claude is drafting: " + ", ".join(s["label"] for s in strategies))
         results = ai.generate_options(payload, wx, strategies, ss.effort)
         secs = (datetime.now() - t0).seconds
         n_ok = sum(1 for _, o, _ in results if isinstance(o, dict))
-        status.update(label=f"{n_ok}/{len(results)} option(s) ready in {secs}s",
+        status.update(label=f"{n_ok} of {plural(len(results), 'option')} ready in {secs}s",
                       state="complete" if n_ok else "error", expanded=not n_ok)
     entries = []
     for strategy, out, meta in results:
@@ -959,7 +963,7 @@ def plan_tab():
     can = bool(ss.trip["destination"] and ss.trip["transport_modes"])
     if not can:
         st.warning("Add a destination and at least one transport mode on the Trip tab.")
-    clicked = st.button(f"Generate {ss.n_options} itinerary option(s)", icon=":material/auto_awesome:", type="primary",
+    clicked = st.button(f"Generate {plural(ss.n_options, 'itinerary option')}", icon=":material/auto_awesome:", type="primary",
                         disabled=not can)
     # "Generate itineraries" on the Must-visits step lands here with autogen set.
     if (clicked or (ss.pop("autogen", False) and can)) and ai_ready():
@@ -974,8 +978,14 @@ def plan_tab():
     summaries = [scoring.option_summary(e["option"], ss.travellers) for e in ok]
     n_days = max(1, int(ss.trip["num_days"]))
     best = max(range(len(ok)), key=lambda i: summaries[i]["nsw"])
-    ui.page_title(f"Pick one of {len(ok)} itineraries", "Same trip, different ways to balance it. Open one to see it day by "
-                  "day and fine-tune it.")
+    if ok[0].get("sample"):
+        ui.page_title("Ready-made itinerary", "A sample plan for this trip, prepared in advance. Open it to see it day by day, "
+                      "or generate fresh options to compare.")
+    elif len(ok) == 1:
+        ui.page_title("Your itinerary", "Open it to see it day by day and fine-tune it.")
+    else:
+        ui.page_title(f"Pick one of {len(ok)} itineraries", "Same trip, different ways to balance it. Open one to see it day "
+                      "by day and fine-tune it.")
     cols = st.columns(len(ok))
     for i, (col, e, s) in enumerate(zip(cols, ok, summaries)):
         band, ink = OPTION_BANDS[i % len(OPTION_BANDS)]
@@ -1077,7 +1087,7 @@ def plan_detail(ok: list[dict]):
     st.divider()
     st.markdown("#### You decide")
     locked = [(d, s) for d in opt["days"] for s in d["stops"] if s.get("_locked") and not s["is_anchor"]]
-    st.caption(f"{len(locked)} stop(s) locked · {len(ss.avoid)} removed or swapped out. Regenerating keeps your locks and "
+    st.caption(f"{plural(len(locked), 'stop')} locked · {len(ss.avoid)} removed or swapped out. Regenerating keeps your locks and "
                "must-visits and avoids what you removed.")
     feedback = st.text_input("Anything to change? (optional)", placeholder="e.g. more street food, finish earlier on day 3")
     c1, c2 = st.columns(2)
