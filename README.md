@@ -12,7 +12,7 @@ A Streamlit demo of the group travel planner described in the project report. Cl
 | Per-person preference profiles + adjustable group weights | **2 · Travellers** tab |
 | Locked-in anchors (fixed date/time) and flexible must-visits | **3 · Must-visits & links** tab |
 | TikTok / Instagram / web link import | **3 · Must-visits & links** tab → *Import* |
-| Several itinerary options, compared side by side | **Plan** tab (3 strategies generated in parallel) |
+| A fairness-first itinerary for the whole group | **Itineraries** page |
 | Fairness (weighted Nash social welfare, Jain's index, least-satisfied member) | **Plan** tab → *Group balance* |
 | Explainability: score breakdown per stop, "why this instead of that", counterfactuals | **Plan** tab |
 | Human in the loop: lock / swap / remove stops, switch transport, regenerate, confirm | **Plan** tab |
@@ -55,7 +55,7 @@ py -m streamlit run app.py
 
 - The Singapore group trip is preloaded with a ready-made itinerary (no API call needed), and **Local Singapore demo** in Quick start resets both. Clicking **Generate** replaces it with fresh AI plans.
 - Turn on **AI generation** in the sidebar just before you present, or click the consent button when it appears. Showing that notice is part of the PDPA story.
-- With reasoning effort set to "low", generating 3 options in parallel usually takes about 30–90 s. Use 2 options or fewer days if it needs to be faster.
+- With reasoning effort set to "low", generating an itinerary usually takes about 30–90 s. Use fewer days if it needs to be faster.
 - Generate one plan before you go on stage. The plan stays in the browser session, so you can present from it even if the Wi-Fi drops.
 
 ## Code map
@@ -63,11 +63,11 @@ py -m streamlit run app.py
 | File | Purpose |
 |---|---|
 | `app.py` | Streamlit UI |
-| `ai.py` | All Claude calls (structured outputs, parallel option generation, refusal fallback) |
+| `ai.py` | All Claude calls (structured outputs, itinerary generation, refusal fallback) |
 | `schemas.py` | Pydantic schemas Claude must answer in |
 | `privacy.py` | De-identification layer: allowlist, aliases, scrubbing, group-level needs |
 | `scoring.py` | Deterministic fairness metrics, costs, pace checks, score breakdowns |
 | `weather.py` | Open-Meteo geocoding + forecast |
 | `demo.py` | Singapore preset |
 | `demo_plan.py` | Ready-made Singapore itinerary shown before anything is generated |
-| `config.py` | Name, model, interests, strategies |
+| `config.py` | Name, model, interests, planning strategy |

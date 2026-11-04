@@ -17,7 +17,7 @@ import scoring
 import ui
 from ai import AIError
 from config import (APP_NAME, CROWD_LABELS, INTEREST_LABELS, INTERESTS, MODEL, PACE_LABELS,
-                    STRATEGIES, TAGLINE, TRANSPORT_ICONS, TRANSPORT_MODES)
+                    STRATEGY, TAGLINE, TRANSPORT_ICONS, TRANSPORT_MODES)
 from demo import DEMO_LINK, demo_state
 from demo_plan import DEMO_CONTRAST, demo_option
 from privacy import aliases, build_payload, clean_url, normalised_weights, scrub
@@ -27,7 +27,6 @@ st.set_page_config(page_title=f"{APP_NAME} · AI group trip planner", page_icon=
 
 DAY_COLORS = [[30, 107, 71], [45, 91, 168], [180, 83, 42], [107, 79, 160], [214, 39, 40], [140, 86, 75], [23, 190, 207]]
 TRAVELLER_COLORS = ["#1E6B47", "#2D5BA8", "#B4532A", "#6B4FA0", "#B8860B", "#0E7490", "#9D174D"]
-OPTION_BANDS = [("#EBF5EF", "#155235"), ("#E8EFFA", "#1F3F78"), ("#FDF1DC", "#7A4107")]
 KIND_ICON = {"activity": "📍", "meal": "🍽️", "rest": "☕"}
 CROWD_BADGE = {"low": ":green-badge[👥 low crowd]", "moderate": ":orange-badge[👥 moderate crowd]", "high": ":red-badge[👥 busy]"}
 CONF_BADGE = {"high": "", "medium": ":gray-badge[ℹ️ verify details]", "low": ":red-badge[⚠️ low-confidence info]"}
@@ -123,7 +122,7 @@ def init():
     ss.update(demo_state())  # Singapore sample is preloaded
     ss.call_log, ss.last_sent = [], None
     ss.consent_ai, ss.consent_personal = False, True
-    ss.n_options, ss.effort = 3, "low"
+    ss.effort = "low"
     ss.nav, ss.step, ss.loaded = NAV[0], STEPS[0], "Local Singapore demo"
     reset_plan_state()
     load_demo_plan()
@@ -141,7 +140,7 @@ def load_demo_plan():
     """Show the ready-made Singapore itinerary, so the demo has a plan without calling the API."""
     ss = st.session_state
     option = prepare_option(demo_option(ss.trip["start_date"]))
-    ss.options = [{"strategy": STRATEGIES[0], "option": option, "error": None, "sample": True}]
+    ss.options = [{"strategy": STRATEGY, "option": option, "error": None, "sample": True}]
     ss.contrast = copy.deepcopy(DEMO_CONTRAST)
 
 
@@ -224,7 +223,7 @@ def go_step(i: int):
 def keep_widget_state():
     """Widgets that only render on some pages would lose their value when hidden; re-assigning keeps it."""
     ss = st.session_state
-    for k in ("consent_ai", "consent_personal", "n_options", "effort", "step", "sel_radio"):
+    for k in ("consent_ai", "consent_personal", "effort", "step", "sel_radio"):
         if k in ss:
             ss[k] = ss[k]
 
@@ -286,7 +285,7 @@ def quick_start(prefix: str = ""):
         st.button("Blank trip", key=prefix + "blank", on_click=clear_all, width="stretch")
 
 
-SETTINGS = ("consent_ai", "consent_personal", "n_options", "effort")
+SETTINGS = ("consent_ai", "consent_personal", "effort")
 
 
 def copy_setting(src: str, dst: str):
@@ -309,8 +308,6 @@ def planner_settings(prefix: str = ""):
         st.toggle("Personalisation", **kw("consent_personal"))
         st.caption("Send interest profiles under aliases. Off = generic plan.")
         st.divider()
-        st.slider("Itinerary options to generate", 1, 3, **kw("n_options"),
-                  help="Each option is one parallel Claude call with a different planning strategy.")
         st.select_slider("Reasoning effort", ["low", "medium", "high"], **kw("effort"),
                          help="Higher = more careful plans but slower. 'low' keeps live demos snappy.")
         st.caption(f"Model: `{MODEL}` · " + ("API key found" if ai.get_api_key() else "no API key"))
@@ -341,8 +338,7 @@ def step_footer(i: int):
     if i < len(STEPS) - 1:
         c3.button(f"Next: {STEPS[i + 1]}", key=f"next{i}", type="primary", on_click=go_step, args=(i + 1,), width="stretch")
     else:
-        n = st.session_state.n_options
-        c3.button(f"Generate {n} itinerar{'ies' if n != 1 else 'y'}", key="to_plan", icon=":material/auto_awesome:",
+        c3.button("Generate itinerary", key="to_plan", icon=":material/auto_awesome:",
                   type="primary", on_click=go_generate, width="stretch")
 
 
@@ -763,25 +759,6 @@ def apply_swap(day: dict, stop_uid: str, alt: dict):
     st.session_state.swaps.pop(stop_uid, None)
 
 
-def compare_text(sel: dict, other: dict, label: str) -> str:
-    bits = []
-    d_nsw = (other["nsw"] - sel["nsw"]) * 100
-    d_min = (other["min"] - sel["min"]) * 100
-    d_cost = other["total_cost"] - sel["total_cost"]
-    d_transit = other["transit_min"] - sel["transit_min"]
-    if abs(d_nsw) >= 1:
-        bits.append(f"fair group score {'+' if d_nsw > 0 else ''}{d_nsw:.0f}")
-    if abs(d_min) >= 2:
-        bits.append(f"least-satisfied member {'+' if d_min > 0 else ''}{d_min:.0f} pts")
-    if abs(d_cost) >= 5:
-        bits.append(f"{money(abs(d_cost))} {'more' if d_cost > 0 else 'cheaper'} pp")
-    if abs(d_transit) >= 15:
-        bits.append(f"{abs(d_transit)} min {'more' if d_transit > 0 else 'less'} in transit")
-    if other["hidden_gems"] != sel["hidden_gems"]:
-        bits.append(f"{other['hidden_gems']} vs {sel['hidden_gems']} local hidden gems")
-    return f"**{label}**: " + (", ".join(bits) if bits else "very similar on all measured criteria") + "."
-
-
 def fairness_panel(option: dict, summary: dict):
     ss = st.session_state
     st.markdown("#### Group balance")
@@ -899,14 +876,14 @@ def generate(strategies: list[dict], extra_anchors=None, extra_notes="", replace
     ss.last_sent = {"payload": payload, "log": log, "at": datetime.now().strftime("%d %b %Y %H:%M:%S")}
     wx = forecast(ss.trip["destination"], ss.trip["start_date"], int(ss.trip["num_days"]))
     t0 = datetime.now()
-    with st.status(f"Planning {plural(len(strategies), 'itinerary option')}…", expanded=True) as status:
+    with st.status("Planning your itinerary…", expanded=True) as status:
         st.write("🔒 De-identified trip data prepared (see *Privacy & data* tab)")
         st.write(f"🌦️ {wx['source'] if wx['days'] else wx['note']}")
         st.write("🧠 Claude is drafting: " + ", ".join(s["label"] for s in strategies))
         results = ai.generate_options(payload, wx, strategies, ss.effort)
         secs = (datetime.now() - t0).seconds
         n_ok = sum(1 for _, o, _ in results if isinstance(o, dict))
-        status.update(label=f"{n_ok} of {plural(len(results), 'option')} ready in {secs}s",
+        status.update(label=f"Itinerary ready in {secs}s" if n_ok else "Couldn't create the itinerary",
                       state="complete" if n_ok else "error", expanded=not n_ok)
     entries = []
     for strategy, out, meta in results:
@@ -954,7 +931,7 @@ def plan_tab():
     if ss.get("plan_view") and opened:
         plan_detail(opened)
         return
-    ui.page_title("Itineraries", "Generate options for the group, compare them, then open the one you like.")
+    ui.page_title("Itineraries", "Generate a plan for the group, then open it to see it day by day and fine-tune it.")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Destination", ss.trip["destination"] or "—")
     c2.metric("Days", int(ss.trip["num_days"]))
@@ -963,68 +940,57 @@ def plan_tab():
     can = bool(ss.trip["destination"] and ss.trip["transport_modes"])
     if not can:
         st.warning("Add a destination and at least one transport mode on the Trip tab.")
-    clicked = st.button(f"Generate {plural(ss.n_options, 'itinerary option')}", icon=":material/auto_awesome:", type="primary",
-                        disabled=not can)
-    # "Generate itineraries" on the Must-visits step lands here with autogen set.
+    clicked = st.button("Generate itinerary", icon=":material/auto_awesome:", type="primary", disabled=not can)
+    # "Generate itinerary" on the Must-visits step lands here with autogen set.
     if (clicked or (ss.pop("autogen", False) and can)) and ai_ready():
-        generate(STRATEGIES[: ss.n_options])
+        generate([STRATEGY])
 
     ok = [e for e in ss.options if e["option"]]
     if not ok:
-        st.caption("Each option is drafted by Claude with a different planning strategy, then scored by the app.")
+        st.caption("Claude drafts the plan, then the app scores how well it serves each traveller.")
         return
 
     st.info(VERIFY_NOTE, icon="ℹ️")
-    summaries = [scoring.option_summary(e["option"], ss.travellers) for e in ok]
+    e = ok[0]
+    s = scoring.option_summary(e["option"], ss.travellers)
     n_days = max(1, int(ss.trip["num_days"]))
-    best = max(range(len(ok)), key=lambda i: summaries[i]["nsw"])
-    if ok[0].get("sample"):
+    if e.get("sample"):
         ui.page_title("Ready-made itinerary", "A sample plan for this trip, prepared in advance. Open it to see it day by day, "
-                      "or generate fresh options to compare.")
-    elif len(ok) == 1:
-        ui.page_title("Your itinerary", "Open it to see it day by day and fine-tune it.")
+                      "or generate a fresh one.")
     else:
-        ui.page_title(f"Pick one of {len(ok)} itineraries", "Same trip, different ways to balance it. Open one to see it day "
-                      "by day and fine-tune it.")
-    cols = st.columns(len(ok))
-    for i, (col, e, s) in enumerate(zip(cols, ok, summaries)):
-        band, ink = OPTION_BANDS[i % len(OPTION_BANDS)]
-        with col, ui.card():
-            badge = '<span class="wf-badge">Best group fit</span>' if i == best and len(ok) > 1 else ""
-            st.markdown(
-                f'<div class="wf-opt-head" style="background:{band};color:{ink}">{badge}'
-                f'<div class="wf-opt-letter">Option {chr(65 + i)}</div>'
-                f'<div class="wf-opt-name">{md(e["strategy"]["label"])}</div></div>'
-                '<div class="wf-stat-grid">'
-                f'<div><div class="wf-stat-k">Cost / person</div><div class="wf-stat-v">{money(s["total_cost"])}</div></div>'
-                f'<div><div class="wf-stat-k">Stops</div><div class="wf-stat-v">{s["n_stops"]}</div></div>'
-                f'<div><div class="wf-stat-k">Walking / day</div><div class="wf-stat-v">{s["walking_km"] / n_days:.1f} km</div></div>'
-                f'<div><div class="wf-stat-k">In transit</div><div class="wf-stat-v">{s["transit_min"] / 60:.1f} h</div></div>'
-                "</div>"
-                + ui.bar_row("Fair score", s["nsw"] * 100) + ui.bar_row("Avg match", s["weighted_avg"] * 100)
-                + ui.bar_row("Least happy", s["min"] * 100),
-                unsafe_allow_html=True)
-            st.markdown(f'<span class="wf-chip">{s["hidden_gems"]} local gems</span>'
-                        f'<span class="wf-chip warn">{s["high_crowd"]} busy stops</span>', unsafe_allow_html=True)
-            st.button("View this plan", key=f"choose_{i}", type="primary" if i == best else "secondary", width="stretch",
-                      on_click=lambda i=i: ss.update(sel_radio=i, plan_view=True))
+        ui.page_title("Your itinerary", "Open it to see it day by day and fine-tune it.")
+    col, _ = st.columns([1, 1])
+    with col, ui.card():
+        st.markdown(
+            f'<div class="wf-opt-head" style="background:#EBF5EF;color:#155235">'
+            f'<div class="wf-opt-letter">{md(e["strategy"]["label"])}</div>'
+            f'<div class="wf-opt-name">{md(e["option"]["title"])}</div></div>'
+            '<div class="wf-stat-grid">'
+            f'<div><div class="wf-stat-k">Cost / person</div><div class="wf-stat-v">{money(s["total_cost"])}</div></div>'
+            f'<div><div class="wf-stat-k">Stops</div><div class="wf-stat-v">{s["n_stops"]}</div></div>'
+            f'<div><div class="wf-stat-k">Walking / day</div><div class="wf-stat-v">{s["walking_km"] / n_days:.1f} km</div></div>'
+            f'<div><div class="wf-stat-k">In transit</div><div class="wf-stat-v">{s["transit_min"] / 60:.1f} h</div></div>'
+            "</div>"
+            + ui.bar_row("Fair score", s["nsw"] * 100) + ui.bar_row("Avg match", s["weighted_avg"] * 100)
+            + ui.bar_row("Least happy", s["min"] * 100),
+            unsafe_allow_html=True)
+        st.markdown(f'<span class="wf-chip">{s["hidden_gems"]} local gems</span>'
+                    f'<span class="wf-chip warn">{s["high_crowd"]} busy stops</span>', unsafe_allow_html=True)
+        st.button("View this plan", key="choose_0", type="primary", width="stretch",
+                  on_click=lambda: ss.update(sel_radio=0, plan_view=True))
 
 
 def plan_detail(ok: list[dict]):
-    """One itinerary option on its own page; Back returns to the list of options."""
+    """The itinerary on its own page; Back returns to the Itineraries overview."""
     ss = st.session_state
-    summaries = [scoring.option_summary(e["option"], ss.travellers) for e in ok]
-    sel = min(ss.get("sel_radio", 0), len(ok) - 1)
-    entry, summ = ok[sel], summaries[sel]
+    entry = ok[0]
+    summ = scoring.option_summary(entry["option"], ss.travellers)
     with st.container(key="detail_back"):
-        st.button("All options", icon=":material/arrow_back:", type="tertiary", on_click=lambda: ss.update(plan_view=False))
-    ui.page_title(f"Option {chr(65 + sel)} · {md(entry['strategy']['label'])}",
+        st.button("Back", icon=":material/arrow_back:", type="tertiary", on_click=lambda: ss.update(plan_view=False))
+    ui.page_title(md(entry["strategy"]["label"]),
                   f"{summ['n_stops']} stops · {money(summ['total_cost'])} per person · fair group score "
                   f"{summ['nsw'] * 100:.0f} / 100")
     st.info(VERIFY_NOTE, icon="ℹ️")
-    others = [compare_text(summ, s, ok[i]["strategy"]["label"]) for i, s in enumerate(summaries) if i != sel]
-    if others:
-        st.markdown("**How the other options differ from this one:**  \n" + "  \n".join(others))
 
     opt = entry["option"]
     st.divider()
@@ -1091,7 +1057,7 @@ def plan_detail(ok: list[dict]):
                "must-visits and avoids what you removed.")
     feedback = st.text_input("Anything to change? (optional)", placeholder="e.g. more street food, finish earlier on day 3")
     c1, c2 = st.columns(2)
-    if c1.button("🔁 Regenerate this option around my edits", width="stretch") and ai_ready():
+    if c1.button("🔁 Regenerate around my edits", width="stretch") and ai_ready():
         extra = [{"id": uid(), "name": s["name"], "kind": "fixed", "date": d["date"], "time": s["start_time"],
                   "duration_min": minutes_between(s["start_time"], s["end_time"]), "note": "Locked by the group", "source_url": ""}
                  for d, s in locked]
@@ -1139,13 +1105,11 @@ def replan_tab():
     ui.page_title("Re-plan on the go", "Something changed during the trip? Describe it and Claude re-plans the rest of "
                   "that day. Nothing changes until you accept.")
     if not entry:
-        st.info("Generate itineraries first, then come back here to re-plan on the day.")
+        st.info("Generate an itinerary first, then come back here to re-plan on the day.")
         st.button("Go to itineraries", icon=":material/map:", on_click=go_nav, args=("Itineraries",))
         return
     opt = entry["option"]
-    ok = [e for e in ss.options if e["option"]]
-    st.caption(f"Working on **Option {chr(65 + ok.index(entry))} · {md(entry['strategy']['label'])}**: "
-               f"{md(opt['title'])}. Open a different option on the Itineraries page to re-plan that one instead.")
+    st.caption(f"Working on **{md(opt['title'])}**.")
     c1, c2 = st.columns([2, 1])
     di = c1.selectbox("Which day?", range(len(opt["days"])),
                       format_func=lambda i: f"Day {opt['days'][i]['day_number']} · {fmt_date(opt['days'][i]['date'])}: {opt['days'][i]['theme']}")

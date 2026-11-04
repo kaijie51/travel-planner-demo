@@ -99,7 +99,7 @@ def _parse(output_format, user: str, effort: str, max_tokens: int = 20000, c: an
     if resp.stop_reason == "refusal":
         raise AIError("The model declined this request. Try rephrasing it.")
     if resp.stop_reason == "max_tokens":
-        raise AIError("The response was too long. Try fewer days or fewer options.")
+        raise AIError("The response was too long. Try fewer days.")
     if resp.parsed_output is None:
         raise AIError("The model returned an unexpected format. Please try again.")
     meta = {
@@ -124,8 +124,8 @@ def generate_options(payload: dict, weather: dict, strategies: list[dict], effor
         user = (
             f"TRIP REQUEST (de-identified):\n{_j(payload)}\n\n"
             f"WEATHER FORECAST BY DATE:\n{weather_txt}\n\n"
-            f"PLANNING STRATEGY FOR THIS VARIANT: {strategy['instruction']}\n\n"
-            f"Plan every date in the request. Title the option to reflect the strategy."
+            f"PLANNING STRATEGY: {strategy['instruction']}\n\n"
+            f"Plan every date in the request. Give the itinerary a short, descriptive title."
         )
         try:
             opt, meta = _parse(schemas.ItineraryOption, user, effort, c=c)
