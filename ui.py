@@ -4,6 +4,8 @@ Design tokens follow the "Wayfare UI Screens" design (laptop + phone). Everythin
 only; no planner logic lives in this module.
 """
 
+import html
+import math
 import re
 
 import streamlit as st
@@ -538,6 +540,50 @@ def bar_row(name: str, value: float, color: str = "#1E6B47") -> str:
     v = max(0, min(100, round(value)))
     return (f'<div class="wf-row"><span class="n">{name}</span><div class="wf-bar"><span style="width:{v}%;background:{color}">'
             f'</span></div><span class="v">{v}</span></div>')
+
+
+
+def _mercator(lon: float, lat: float, z: int) -> tuple[float, float]:
+    n = 256 * 2 ** z
+    lat = math.radians(max(-85.0, min(85.0, lat)))
+    return (lon + 180) / 360 * n, (1 - math.log(math.tan(lat) + 1 / math.cos(lat)) / math.pi) / 2 * n
+
+
+def map_html(points: list[dict], paths: list[dict] = (), width: int = 800, height: int = 420) -> str:
+    """A map drawn as plain SVG over street tiles. Used instead of st.pydeck_chart, whose lazily loaded frontend
+    file Streamlit Cloud sometimes fails to serve. points: {lon, lat, color [r,g,b], name}; paths: {path, color}."""
+    coords = [(p["lon"], p["lat"]) for p in points] + [tuple(c) for p in paths for c in p["path"]]
+    lons, lats = [c[0] for c in coords], [c[1] for c in coords]
+    for z in range(16, 1, -1):  # closest zoom that fits everything with a margin
+        (x1, y1), (x2, y2) = _mercator(min(lons), max(lats), z), _mercator(max(lons), min(lats), z)
+        if x2 - x1 <= width * 0.85 and y2 - y1 <= height * 0.8:
+            break
+    x0, y0 = (x1 + x2 - width) / 2, (y1 + y2 - height) / 2
+
+    def xy(lon, lat):
+        x, y = _mercator(lon, lat, z)
+        return f"{x - x0:.1f}", f"{y - y0:.1f}"
+
+    parts = []
+    for tx in range(int(x0 // 256), int((x0 + width) // 256) + 1):
+        for ty in range(int(y0 // 256), int((y0 + height) // 256) + 1):
+            if 0 <= ty < 2 ** z:
+                url = f"https://tile.openstreetmap.org/{z}/{tx % 2 ** z}/{ty}.png"
+                parts.append(f'<image href="{url}" x="{tx * 256 - x0:.1f}" y="{ty * 256 - y0:.1f}" width="256" height="256" '
+                             'opacity="0.7"/>')
+    for p in paths:
+        pts = " ".join(",".join(xy(*c)) for c in p["path"])
+        r, g, b = p["color"]
+        parts.append(f'<polyline points="{pts}" fill="none" stroke="rgb({r},{g},{b})" stroke-width="3" stroke-opacity="0.6" '
+                     'stroke-linejoin="round"/>')
+    for p in points:
+        x, y = xy(p["lon"], p["lat"])
+        r, g, b = p["color"]
+        parts.append(f'<circle cx="{x}" cy="{y}" r="7" fill="rgb({r},{g},{b})" stroke="#fff" stroke-width="2">'
+                     f'<title>{html.escape(p["name"])}</title></circle>')
+    return (f'<div class="wf-map"><svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="Map" '
+            f'style="display:block;border-radius:12px;background:#E9EEEB">{"".join(parts)}</svg>'
+            '<div style="font-size:11px;opacity:.6;text-align:right;margin-top:2px">© OpenStreetMap contributors</div></div>')
 
 
 CONSENT_HTML = """

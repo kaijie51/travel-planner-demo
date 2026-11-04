@@ -9,7 +9,6 @@ import json
 import uuid
 from datetime import date, datetime, time, timedelta
 
-import pydeck as pdk
 import streamlit as st
 
 import ai
@@ -19,7 +18,8 @@ from ai import AIError
 from config import (APP_NAME, CROWD_LABELS, INTEREST_LABELS, INTERESTS, MODEL, PACE_LABELS,
                     STRATEGY, TAGLINE, TRANSPORT_ICONS, TRANSPORT_MODES)
 from demo import DEMO_LINK, demo_state
-from demo_plan import DEMO_CONTRAST, demo_option
+from demo_plan import (DEMO_CONTRAST, DEMO_EXPLORE, DEMO_EXPLORE_TAGS, DEMO_EXTRACTED, DEMO_SWAP_STOP, DEMO_SWAPS,
+                       demo_option, demo_replan)
 from privacy import aliases, build_payload, clean_url, normalised_weights, scrub
 from weather import forecast
 
@@ -124,7 +124,7 @@ def init():
     ss.consent_ai, ss.consent_personal = False, True
     ss.nav, ss.step, ss.loaded = NAV[0], STEPS[0], "Local Singapore demo"
     reset_plan_state()
-    load_demo_plan()
+    load_demo_results()
 
 
 def load_demo():
@@ -132,15 +132,28 @@ def load_demo():
     st.session_state.ver += 1
     st.session_state.loaded = "Local Singapore demo"
     reset_plan_state()
-    load_demo_plan()
+    load_demo_results()
 
 
-def load_demo_plan():
-    """Show the ready-made Singapore itinerary, so the demo has a plan without calling the API."""
+def load_demo_results():
+    """Prefill every AI feature with ready-made Singapore results, so the demo works without calling the API."""
     ss = st.session_state
     option = prepare_option(demo_option(ss.trip["start_date"]))
     ss.options = [{"strategy": STRATEGY, "option": option, "error": None, "sample": True}]
     ss.contrast = copy.deepcopy(DEMO_CONTRAST)
+    swap_uid = next(s["_uid"] for d in option["days"] for s in d["stops"] if s["name"] == DEMO_SWAP_STOP)
+    ss.swaps = {swap_uid: copy.deepcopy(DEMO_SWAPS)}
+    ss.pending_replan = demo_replan(ss.trip["start_date"])
+    ss.quick = ss.pending_replan["event"]
+    ss.explore = [explore_place(p) for p in copy.deepcopy(DEMO_EXPLORE)]
+    ss.tags = list(DEMO_EXPLORE_TAGS)
+    ss.link_url, ss.link_caption = DEMO_LINK["url"], DEMO_LINK["caption"]
+    ss.link_ver += 1
+    ss.extracted = {"place": dict(DEMO_EXTRACTED), "url": clean_url(DEMO_LINK["url"])}
+
+
+def explore_place(p: dict) -> dict:
+    return dict(p, color=[49, 163, 84] if p["hidden_gem"] else [49, 130, 189])
 
 
 def clear_all():
@@ -721,18 +734,7 @@ def plan_map(option: dict, height: int = 420):
         path.append(hotel)
         paths.append({"path": path, "color": color, "name": f"Day {d['day_number']} route"})
     points.append({"lon": hotel[0], "lat": hotel[1], "color": [20, 20, 20], "name": "🏨 Accommodation"})
-    lats, lons = [p["lat"] for p in points], [p["lon"] for p in points]
-    span = max(max(lats) - min(lats), max(lons) - min(lons))
-    zoom = 12 if span < 0.08 else 11 if span < 0.2 else 10 if span < 0.45 else 9 if span < 1 else 7
-    st.pydeck_chart(pdk.Deck(
-        layers=[
-            pdk.Layer("PathLayer", paths, get_path="path", get_color="color", width_min_pixels=3, opacity=0.55, pickable=True),
-            pdk.Layer("ScatterplotLayer", points, get_position="[lon, lat]", get_fill_color="color", get_radius=40,
-                      radius_min_pixels=6, stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=1, pickable=True),
-        ],
-        initial_view_state=pdk.ViewState(latitude=sum(lats) / len(lats), longitude=sum(lons) / len(lons), zoom=zoom),
-        tooltip={"text": "{name}"},
-    ), height=height)
+    st.markdown(ui.map_html(points, paths, height=height), unsafe_allow_html=True)
     legend = " ".join(
         f"<span style='color:rgb({c[0]},{c[1]},{c[2]});font-weight:600'>● Day {i + 1}</span>"
         for i, c in enumerate(DAY_COLORS[: len(option["days"])])
@@ -1150,15 +1152,10 @@ def explore_tab():
     if st.button("Find places", type="primary", disabled=not (tags and ss.trip["destination"])) and ai_ready():
         res = run_ai("Explore places", ai.explore, ss.trip["destination"], tags, current_payload()[0])
         if res:
-            ss.explore = [dict(p.model_dump(), color=[49, 163, 84] if p.hidden_gem else [49, 130, 189]) for p in res.places]
+            ss.explore = [explore_place(p.model_dump()) for p in res.places]
     if not ss.explore:
         return
-    st.pydeck_chart(pdk.Deck(
-        layers=[pdk.Layer("ScatterplotLayer", ss.explore, get_position="[lon, lat]", radius_min_pixels=7,
-                          get_fill_color="color", pickable=True)],
-        initial_view_state=pdk.ViewState(latitude=sum(p["lat"] for p in ss.explore) / len(ss.explore),
-                                         longitude=sum(p["lon"] for p in ss.explore) / len(ss.explore), zoom=11),
-        tooltip={"text": "{name}"}), height=320)
+    st.markdown(ui.map_html(ss.explore, height=360), unsafe_allow_html=True)
     st.caption("🟢 local hidden gem · 🔵 well-known · locations approximate")
     names = {a["name"].lower() for a in ss.anchors}
     for i, p in enumerate(ss.explore):

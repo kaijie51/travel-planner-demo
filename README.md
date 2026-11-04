@@ -53,10 +53,10 @@ py -m streamlit run app.py
 
 ## Demo tips
 
-- The Singapore group trip is preloaded with a ready-made itinerary (no API call needed), and **Local Singapore demo** in Quick start resets both. Clicking **Generate** replaces it with fresh AI plans.
+- The Singapore group trip is preloaded with ready-made results for every AI feature, so the whole demo runs without an API call: the itinerary, a stop swap (Day 1, Orchard), "Why this instead of that?" (Gardens by the Bay vs Sentosa), the Instagram link import (Bukit Timah), a rainy-day Re-plan, and Explore results for nature + street food. **Local Singapore demo** in Quick start restores them all. Any new request still goes to Claude live.
 - Turn on **AI generation** in the sidebar just before you present, or click the consent button when it appears. Showing that notice is part of the PDPA story.
 - Claude runs at low reasoning effort, so generating an itinerary usually takes about 30–90 s. Use fewer days if it needs to be faster.
-- Generate one plan before you go on stage. The plan stays in the browser session, so you can present from it even if the Wi-Fi drops.
+- Maps are drawn from OpenStreetMap tiles, so they need internet access but no API key.
 
 ## Code map
 

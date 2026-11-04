@@ -214,3 +214,91 @@ DEMO_CONTRAST = {
     "counterfactual": "Raising the group's adventure interest and crowd tolerance to 4, with a bigger budget, would make Sentosa the better fit.",
     "verdict": "keep_current",
 }
+
+
+# Prefilled results for the other AI features, in the shape their schemas return, so a demo needs no API calls.
+
+# "Swap" on Day 1's Orchard stop (schemas.Alternative list). The next stop is the Kampong Glam dinner.
+DEMO_SWAP_STOP = "ION Orchard & Emerald Hill"
+DEMO_SWAPS = [
+    {"stop": _stop("Bugis Street & Bugis Junction", "activity", "14:15", "17:30", "Bugis", 1.3005, 103.8550,
+                   "Covered street market with 600 stalls for bargain souvenirs, joined to an air-conditioned mall.",
+                   40, "moderate", True, _attrs(culture=0.5, food=0.6, shopping=1.0, nightlife=0.3, relaxation=0.3),
+                   ["Cheapest shopping", "Next to the hotel", "Indoor"],
+                   [_leg("Walk", 10, 0, "Along Victoria Street to Kampong Glam")]),
+     "vs_current": "Cheaper and closer to dinner (10 min walk), but less designer shopping and no Peranakan terraces."},
+    {"stop": _stop("Holland Village", "activity", "14:15", "17:30", "Holland Village", 1.3110, 103.7960,
+                   "Low-rise neighbourhood of independent boutiques, bakeries and cafés, popular with locals.",
+                   45, "low", False, _attrs(culture=0.5, food=0.8, shopping=0.8, nightlife=0.5, relaxation=0.7),
+                   ["Independent shops", "Quieter than Orchard", "Café stop"],
+                   [_leg("Public transport", 30, 1.9, "MRT Circle Line, then Downtown Line to Bugis")]),
+     "vs_current": "Quieter and more local, fitting the group's 'prefer quiet' setting, but 20 min more travel to dinner and partly outdoor."},
+    {"stop": _stop("Takashimaya & Ngee Ann City", "activity", "14:15", "17:30", "Orchard Road", 1.3025, 103.8346,
+                   "Department store plus Kinokuniya's huge bookshop and a basement food hall, all under one roof.",
+                   55, "moderate", True, _attrs(culture=0.6, food=0.7, shopping=1.0, nightlife=0.2, relaxation=0.4),
+                   ["Top shopping interest", "Indoor", "Food hall snacks"],
+                   [_leg("Public transport", 20, 1.6, "MRT Thomson-East Coast Line, then Downtown Line to Bugis")]),
+     "vs_current": "Same area and similar cost; trades the local-designer floor for a bookshop and food hall."},
+]
+
+# "Import from a link" result for demo.DEMO_LINK (schemas.ExtractedPlace).
+DEMO_EXTRACTED = {
+    "found": True, "place_name": "Bukit Timah Nature Reserve", "area": "Bukit Timah", "city": "Singapore",
+    "matches_destination": True, "category": "Hiking / nature reserve", "suggested_duration_min": 150,
+    "why_people_go": "Singapore's highest hill: a short, steep rainforest climb to the 163 m summit, with macaques along the way.",
+    "confidence": "high",
+    "notes": "The caption names Bukit Timah Hill and the summit hike; the link itself has no place name.",
+}
+
+# "Explore" results (schemas.ExploreResult places) for the tags below.
+DEMO_EXPLORE_TAGS = ["nature", "street food"]
+DEMO_EXPLORE = [
+    {"name": "Pulau Ubin", "area": "Changi Point", "tags": ["nature"], "crowd_level": "low", "est_cost_per_person": 10,
+     "hidden_gem": True, "best_time": "Weekday morning", "lat": 1.4044, "lon": 103.9625,
+     "description": "A 10-minute bumboat ride to Singapore's last kampong island: cycle past wetlands and old villages."},
+    {"name": "Sungei Buloh Wetland Reserve", "area": "Kranji", "tags": ["nature"], "crowd_level": "low",
+     "est_cost_per_person": 0, "hidden_gem": True, "best_time": "Early morning", "lat": 1.4466, "lon": 103.7298,
+     "description": "Mangrove boardwalks with monitor lizards, mudskippers and, if you're lucky, saltwater crocodiles."},
+    {"name": "Labrador Nature Reserve", "area": "Pasir Panjang", "tags": ["nature"], "crowd_level": "low",
+     "est_cost_per_person": 0, "hidden_gem": True, "best_time": "Late afternoon", "lat": 1.2667, "lon": 103.8030,
+     "description": "Coastal forest, WWII bunkers and the island's only rocky shore, with sunset views over the harbour."},
+    {"name": "Coney Island Park", "area": "Punggol", "tags": ["nature"], "crowd_level": "low", "est_cost_per_person": 0,
+     "hidden_gem": True, "best_time": "Morning", "lat": 1.4100, "lon": 103.9220,
+     "description": "Rustic island park with casuarina woods and quiet beaches, best explored by rented bike."},
+    {"name": "Old Airport Road Food Centre", "area": "Dakota", "tags": ["street food"], "crowd_level": "moderate",
+     "est_cost_per_person": 8, "hidden_gem": True, "best_time": "Weekday lunch", "lat": 1.3083, "lon": 103.8857,
+     "description": "A favourite of locals with famous stalls for char kway teow, satay bee hoon and rojak."},
+    {"name": "Chomp Chomp Food Centre", "area": "Serangoon Gardens", "tags": ["street food"], "crowd_level": "moderate",
+     "est_cost_per_person": 12, "hidden_gem": True, "best_time": "Dinner from 6pm", "lat": 1.3644, "lon": 103.8665,
+     "description": "Evening-only hawker centre known for barbecued stingray, satay and sugarcane juice."},
+    {"name": "Changi Village Hawker Centre", "area": "Changi Village", "tags": ["street food", "nature"],
+     "crowd_level": "moderate", "est_cost_per_person": 7, "hidden_gem": True, "best_time": "After Pulau Ubin",
+     "lat": 1.3891, "lon": 103.9876,
+     "description": "Seaside hawker centre famous for nasi lemak, a natural stop before or after the Ubin bumboat."},
+    {"name": "Lau Pa Sat Satay Street", "area": "Raffles Place", "tags": ["street food"], "crowd_level": "high",
+     "est_cost_per_person": 15, "hidden_gem": False, "best_time": "After 7pm", "lat": 1.2806, "lon": 103.8504,
+     "description": "Boon Tat Street closes to traffic each evening for smoky satay grills beside a Victorian market hall."},
+]
+
+
+def demo_replan(start: date) -> dict:
+    """A proposed "Re-plan" of Day 1 for heavy rain from 14:00 (schemas.ReplanResult, as stored by the app)."""
+    day = _day1(start)
+    orchard, dinner = day["stops"][3], day["stops"][4]
+    orchard["end_time"] = "18:00"
+    orchard["transport_to_next"] = [_leg("Public transport", 15, 1.6, "MRT Downtown Line to Bugis; covered walkways throughout")]
+    day["stops"][4] = _stop(
+        "Bugis Junction dinner & shopping", "meal", "18:30", "21:00", "Bugis", 1.2995, 103.8558,
+        "Covered shopping street and food court with halal, vegetarian and local stalls, linked to the hotel's MRT.",
+        30, "moderate", True, _attrs(culture=0.4, food=0.9, shopping=0.9, nightlife=0.5, relaxation=0.5),
+        ["Indoor: rain forecast", "Vegetarian & pork-free stalls", "Linked to the hotel"], [])
+    day["to_hotel"] = _leg("Walk", 5, 0, "Underground link from Bugis Junction to the hotel")
+    return {
+        "day_idx": 0, "day": day, "event": "☔ Heavy rain for the rest of the day",
+        "changes": [
+            "Kept every stop before 14:00 unchanged.",
+            "ION Orchard & Emerald Hill extended to 18:00, since it's indoors.",
+            "Replaced Kampong Glam's outdoor evening with dinner and shopping at Bugis Junction, a covered mall linked to the hotel.",
+            "Switched the last legs to MRT and covered walkways to keep the group dry.",
+        ],
+    }
