@@ -34,7 +34,7 @@ NAV = ["Plan trip", "Itineraries", "Re-plan", "Explore", "Privacy & data"]
 NAV_ICONS = {"Plan trip": "luggage", "Itineraries": "map", "Re-plan": "bolt", "Explore": "explore", "Privacy & data": "lock",
              "Settings": "tune"}
 STEPS = ["Trip details", "Travellers", "Must-visits"]
-VERIFY_NOTE = ("Venue details (hours, prices, crowd levels, coordinates) come from Claude's general knowledge, "
+VERIFY_NOTE = ("Venue details (hours, prices, crowd levels, coordinates) come from Wayfare AI's general knowledge, "
                "not live data. Verify before booking.")
 
 
@@ -179,12 +179,12 @@ def log_call(purpose: str, meta: dict | None):
 
 def ai_ready() -> bool:
     if not ai.get_api_key():
-        st.error("No Claude API key configured. See README → *API key*.")
+        st.error("No Anthropic API key configured. See README → *API key*.")
         return False
     if not st.session_state.consent_ai:
         with ui.card():
             st.markdown("### Before we plan with AI")
-            st.markdown("Wayfare will send a de-identified version of your trip to Anthropic's Claude API to build your "
+            st.markdown("Wayfare will send a de-identified version of your trip to Anthropic's AI API to build your "
                         "itineraries. Here is what that means.")
             st.markdown(ui.CONSENT_HTML, unsafe_allow_html=True)
             st.caption("Processed abroad by the AI provider. Used only to plan this trip: no model training, no marketing. "
@@ -197,7 +197,7 @@ def ai_ready() -> bool:
 
 def run_ai(purpose: str, fn, *args):
     try:
-        with st.spinner(f"Asking Claude: {purpose.lower()}…"):
+        with st.spinner(f"Asking Wayfare: {purpose.lower()}…"):
             result, meta = fn(*args)
     except AIError as e:
         st.error(str(e))
@@ -316,7 +316,7 @@ def planner_settings(prefix: str = ""):
     with ui.card():
         st.markdown("#### Planner settings")
         st.toggle("AI generation", **kw("consent_ai"))
-        st.caption("Send de-identified trip details to Anthropic's Claude API.")
+        st.caption("Send de-identified trip details to Anthropic's AI API.")
         st.toggle("Personalisation", **kw("consent_personal"))
         st.caption("Send interest profiles under aliases. Off = generic plan.")
         st.divider()
@@ -775,7 +775,7 @@ def fairness_panel(option: dict, summary: dict):
     with st.expander("How are these scores calculated?"):
         st.markdown(
             "Computed in the app from your settings, not by the AI:\n"
-            "- Claude tags every stop with how strongly it serves each interest (0–1).\n"
+            "- Wayfare AI tags every stop with how strongly it serves each interest (0–1).\n"
             "- **Match** for a traveller = the stop's tags averaged over that traveller's interest ratings, then averaged over all stops.\n"
             "- **Fair group score** = weighted geometric mean of members' matches (weighted Nash social welfare). "
             "One unhappy member pulls it down sharply, so a plan can't win by serving only the majority.\n"
@@ -819,7 +819,7 @@ def render_stop(day: dict, si: int, stop: dict, prev_leg: dict | None):
             rows = scoring.stop_breakdown(stop, prev_leg, ss.travellers, dict(ss.trip, dates=trip_dates(ss.trip)))
             st.markdown(md_table(["Criterion", "Value"], rows))
             st.markdown(f"**Booking:** {md(stop['booking_info'])}  \n**Info confidence:** {stop['info_confidence']}")
-            st.caption(f"Source: Claude general knowledge (not live data). {VERIFY_NOTE}")
+            st.caption(f"Source: Wayfare AI general knowledge (not live data). {VERIFY_NOTE}")
         if u in ss.swaps:
             st.markdown("**Alternatives for this slot**")
             for j, alt in enumerate(ss.swaps[u]):
@@ -878,7 +878,7 @@ def generate(strategies: list[dict], extra_anchors=None, extra_notes="", replace
     with st.status("Planning your itinerary…", expanded=True) as status:
         st.write("🔒 De-identified trip data prepared (see *Privacy & data* tab)")
         st.write(f"🌦️ {wx['source'] if wx['days'] else wx['note']}")
-        st.write("🧠 Claude is drafting: " + ", ".join(s["label"] for s in strategies))
+        st.write("🧠 Wayfare is drafting: " + ", ".join(s["label"] for s in strategies))
         results = ai.generate_options(payload, wx, strategies)
         secs = (datetime.now() - t0).seconds
         n_ok = sum(1 for _, o, _ in results if isinstance(o, dict))
@@ -946,7 +946,7 @@ def plan_tab():
 
     ok = [e for e in ss.options if e["option"]]
     if not ok:
-        st.caption("Claude drafts the plan, then the app scores how well it serves each traveller.")
+        st.caption("Wayfare AI drafts the plan, then the app scores how well it serves each traveller.")
         return
 
     st.info(VERIFY_NOTE, icon="ℹ️")
@@ -1101,7 +1101,7 @@ def compact_day(day: dict):
 def replan_tab():
     ss = st.session_state
     entry = selected_entry()
-    ui.page_title("Re-plan on the go", "Something changed during the trip? Describe it and Claude re-plans the rest of "
+    ui.page_title("Re-plan on the go", "Something changed during the trip? Describe it and Wayfare re-plans the rest of "
                   "that day. Nothing changes until you accept.")
     if not entry:
         st.info("Generate an itinerary first, then come back here to re-plan on the day.")
@@ -1180,7 +1180,7 @@ def privacy_tab():
             '<div class="wf-hero"><span class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" '
             'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" '
             'height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><h2>What the AI sees: the trip, never the '
-            'people</h2><p>Everything passes through a de-identification layer before it reaches Claude. Only an allowlist of '
+            'people</h2><p>Everything passes through a de-identification layer before it reaches the AI model (via the Anthropic API). Only an allowlist of '
             'fields is sent, names become aliases, and personal identifiers are stripped. Below is the live preview of the '
             'next request, built from what you\'ve entered.</p></div>', unsafe_allow_html=True)
         c2.button("Clear all my data", key="clear_hero", icon=":material/delete:", on_click=clear_all, width="stretch")
@@ -1197,7 +1197,7 @@ def privacy_tab():
                 "must_visits": [{"name": a["name"], "note": a.get("note", ""), "link": a.get("source_url", "")} for a in ss.anchors],
             }, expanded=True)
         with c2, st.container(key="wf_sent"):
-            st.markdown("**What Claude receives** · next request")
+            st.markdown("**What the AI receives** · next request")
             st.json(payload, expanded=True)
 
     # Keyed so laptop CSS can stretch the left card to the height of the two cards on the right.
@@ -1228,11 +1228,11 @@ def privacy_tab():
         st.markdown(f"""
 | Information | Source | Limitation |
 |---|---|---|
-| Places, opening hours, prices, crowd levels | Claude ({MODEL}) general knowledge | Not live data and may be outdated. Each stop carries a confidence level. **Verify before booking.** |
-| Coordinates on the map | Claude estimate | Approximate, for orientation only |
+| Places, opening hours, prices, crowd levels | Wayfare AI general knowledge | Not live data and may be outdated. Each stop carries a confidence level. **Verify before booking.** |
+| Coordinates on the map | Wayfare AI estimate | Approximate, for orientation only |
 | Weather | Open-Meteo forecast API | Only available up to 16 days ahead |
 | Fairness & score breakdowns | Computed in this app from your settings | Depend on the AI's interest tags for each stop |
-| Transport times & costs | Claude estimate | Check live transit apps on the day |
+| Transport times & costs | Wayfare AI estimate | Check live transit apps on the day |
 """)
     with ui.card():
         st.markdown("#### PDPA alignment")

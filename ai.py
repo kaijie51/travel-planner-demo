@@ -92,9 +92,9 @@ def _parse(output_format, user: str, max_tokens: int = 20000, c: anthropic.Anthr
     except anthropic.RateLimitError:
         raise AIError("Rate limited by the API. Wait a few seconds and try again.")
     except anthropic.APIStatusError as e:
-        raise AIError(f"Claude API error ({e.status_code}): {e.message}")
+        raise AIError(f"Anthropic API error ({e.status_code}): {e.message}")
     except anthropic.APIConnectionError:
-        raise AIError("Could not reach the Claude API. Check your internet connection.")
+        raise AIError("Could not reach the Anthropic API. Check your internet connection.")
 
     if resp.stop_reason == "refusal":
         raise AIError("The model declined this request. Try rephrasing it.")
